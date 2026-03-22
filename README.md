@@ -36,5 +36,9 @@ make run
 ```
 配置与数据默认存储于 `~/.agy_go` 目录。您可以通过 Web UI 的 **⚙️ 设置** 按钮动态调整 AI 渠道。
 
-## 5. 免责声明
+如果您需要深入了解本项目的底层机制，请查阅以下文档：
+- [产品设计 (Product Design)](docs/PRODUCT_DESIGN.md): 项目定义、核心目标与技术栈说明。
+- [技术手册 (Technical Documentation)](docs/TECHNICAL_DOCUMENTATION.md): 内核研究成果、接口定义与具体的代码实现逻辑。
+
+## 6. 免责声明
 本项目仅用于技术研究。功能受限于闭源内核的协议稳定性，严禁用于处理机密代码。
