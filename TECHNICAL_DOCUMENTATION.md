@@ -72,31 +72,26 @@ Agent 基于消息队列实现多轮对话：
 - **ApplyCodeEdit 参数**: 接收 `edits` 数组，每个 unit 包含 `uri`、`new_text` 以及 `range` 信息。
 - **CaptureScreenshot 参数**: 依赖 `page_id` 定位特定的浏览器 Context。
 
-### 6.4 内核能力的工程化利用逻辑
+### 6.4 内核功能的具体代码利用实现
 
-本项目并非简单的内核透传工具，而是通过以下三种模式深度集成并增强了内核能力：
+本项目在代码层面通过以下具体逻辑实现对内核能力的集成：
 
-#### 1. 宿主屏蔽与环境自愈 (Abstraction & Self-healing)
-- **原理**: 本项目将内核视为一个“不稳定的物理对象”，通过 `internal/core/Host` 建立隔离层。
-- **实践**: 
-    - 针对内核启动初期的索引加载压力，通过 **Heartbeat 探测环路** 实现“应用层延迟注入”，确保 Agent 逻辑在内核真正 Ready 后才开始工作。
-    - 在探测到辅助工具（如 `fd`）架构不匹配时，宿主程序会自动执行 **能力降级 (Fallback)**，通过原生 Go 指令集模拟内核缺少的搜索能力，保证了感知层面的高可用。
+#### 1. 启动与就绪探测实现 (Host Logic)
+- **输入注入**: `internal/core/host.go` 中的 `generateMetadata` 函数构造特定 TLV 字节流（`0x0a` + 长度 + JSON），通过 `cmd.Stdin` 注入内核以触发初始化。
+- **双重探测环路**: `WaitReady` 函数不只依赖 TCP 连接，还会循环调用 `rpc.Client.Heartbeat()`。只有当内核返回 HTTP 200 且 RPC 路由响应成功时，宿主进程才释放阻塞，防止 Agent 在索引未加载完成时发起请求。
+- **架构自适应**: `internal/index/indexer.go` 在执行前会先运行 `fd --version` 测试。若返回 `bad CPU type`（如 Intel Mac 运行 ARM 版 fd），系统会立即捕捉 `exec.Error` 并切换至 `scanProjectLegacy`（原生 `filepath.WalkDir` 递归），确保索引流程不中断。
 
-#### 2. 执行器闭环化 (Actuator Closed-looping)
-- **原理**: 内核原生的 `ApplyCodeEdit` 是开环的（只负责改，不负责查错）。本项目通过 **CSE 闭环理论** 对其进行了增强。
-- **实践**: 
-    - 系统封装了 `apply_core_edit` 复合工具。每当该工具被调用，系统会自动触发内核的 `/GetDiagnostics` 接口。
-    - 如果诊断发现补丁导致了新的编译错误，系统会将错误信息作为“环境负反馈”直接喂给 Agent 的决策引擎，强制其进入 **“自校正循环 (Self-Correction Loop)”**，直到错误消除。
+#### 2. 代码补丁与自动诊断流 (Edit & Lint Flow)
+- **原子补丁**: `internal/tools/core_v2.go` 将 LLM 生成的改动封装为 `ApplyCodeEditRequest`。该请求包含 `uri` 和 `TextEdit` 数组（含起始行列号），通过 Connect RPC 发送。
+- **反馈注入逻辑**: 在 `internal/agent/agent.go` 的工具执行循环中，若 `apply_core_edit` 返回成功，程序会立即追加一个提示字符串。这会诱导 LLM 下一轮主动调用 `get_core_diagnostics`。
+- **诊断集成**: `GetCoreDiagnosticsTool` 直接调用内核 `/GetDiagnostics` 接口，将返回的 JSON 错误列表（含错误行、信息、严重程度）转化为文本并喂回给 LLM 消息历史，实现错误的自动识别。
 
-#### 3. 多协议归一化路由 (Protocol Normalization)
-- **原理**: 内核虽然强大，但需要高规格的 LLM（如 GPT-4o/Claude 3.5）驱动其复杂的补丁逻辑。
-- **实践**: 
-    - 本项目通过 `internal/llm` 层建立了一套 **协议映射矩阵**。它能将通用的 OpenAI/Gemini 指令集精准转化为驱动内核所需的高精度逻辑参数。
-    - 即使是 Ollama 等本地模型，在经过本项目的 Base URL 智能补全和协议对齐后，也能获得与官方环境一致的内核操控能力。
+#### 3. LLM 协议转换工厂 (Provider Implementation)
+- **多驱动映射**: `internal/llm/factory.go` 中的 `BuildProvider` 函数充当分发器。它将前端定义的 `ollama`、`lmstudio` 等标识符统一映射到 `OpenAIProvider` 驱动。
+- **URL 自动重写**: 针对本地 Provider，工厂函数会自动检查并补全 Base URL。例如，若检测到 `provider == "ollama"` 且 URL 为空，则自动注入 `http://localhost:11434/v1`，确保底层驱动的 `http.Client` 能够直接通信。
 
-#### 4. 视觉感知集成 (Visual Feedback)
-- **原理**: 利用内核探测到的浏览器快照能力，将“纯文本 Agent”升级为“具备视觉的 Agent”。
-- **实践**: 
-    - 通过 `browser_screenshot` 工具，Agent 可以主动向内核申请 UI 状态。快照数据不仅用于辅助决策，还会被持久化到 `~/.agy_go/sessions` 中，作为后期人类审计的重要依据。
+#### 4. 视觉数据处理 (Screenshot Implementation)
+- **快照采集**: `CaptureScreenshotTool` 接收 `page_id` 参数，调用内核 RPC 获取图片二进制数据的 Base64 编码。
+- **会话持久化**: 采集到的 Base64 数据会被 `internal/session/recorder.go` 实时写入 `~/.agy_go/sessions/` 目录下的 `events.jsonl` 文件，确保 UI 调试过程可回溯。
 
 ## 7. 运维与升级
