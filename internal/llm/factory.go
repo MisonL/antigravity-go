@@ -10,7 +10,8 @@ func BuildProvider(name, model, apiKey, baseURL string, maxOutput int) (Provider
 	case "anthropic":
 		return NewAnthropicProvider(apiKey, model, baseURL, maxOutput), nil
 	case "gemini":
-		return NewGeminiProvider(apiKey, model)
+		opts := GeminiOptions{BaseURL: baseURL, MaxOutputTokens: maxOutput}
+		return NewGeminiProviderWithOptions(apiKey, model, opts)
 	default:
 		opts := OpenAIOptions{BaseURL: baseURL, MaxTokens: maxOutput}
 		return NewOpenAIProviderWithOptions(apiKey, model, opts), nil

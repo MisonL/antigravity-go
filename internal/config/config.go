@@ -10,18 +10,18 @@ import (
 )
 
 type Config struct {
-	Provider    string `yaml:"provider"`
-	Model       string `yaml:"model"`
-	BaseURL     string `yaml:"base_url"`
-	APIKey      string `yaml:"api_key"` // Optional, env var is preferred
-	MaxContext  int    `yaml:"max_context_tokens"`
-	MaxOutput   int    `yaml:"max_output_tokens"`
-	CoreBinPath string `yaml:"core_bin_path"`
-	DataDir     string `yaml:"data_dir"`
-	WebHost     string `yaml:"web_host"`
-	WebPort     int    `yaml:"web_port"`
-	AuthToken   string `yaml:"auth_token"`
-	Approvals   string `yaml:"approvals"`
+	Provider    string `yaml:"provider" json:"provider"`
+	Model       string `yaml:"model" json:"model"`
+	BaseURL     string `yaml:"base_url" json:"base_url"`
+	APIKey      string `yaml:"api_key" json:"api_key"` // Optional, env var is preferred
+	MaxContext  int    `yaml:"max_context_tokens" json:"max_context_tokens"`
+	MaxOutput   int    `yaml:"max_output_tokens" json:"max_output_tokens"`
+	CoreBinPath string `yaml:"core_bin_path" json:"core_bin_path"`
+	DataDir     string `yaml:"data_dir" json:"data_dir"`
+	WebHost     string `yaml:"web_host" json:"web_host"`
+	WebPort     int    `yaml:"web_port" json:"web_port"`
+	AuthToken   string `yaml:"auth_token" json:"auth_token"`
+	Approvals   string `yaml:"approvals" json:"approvals"`
 }
 
 func defaultDataDir() string {

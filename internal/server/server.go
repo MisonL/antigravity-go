@@ -254,16 +254,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.Load()
-	if err != nil {
-		http.Error(w, "failed to load config", http.StatusInternalServerError)
-		return
-	}
+	s.cfgMu.RLock()
+	cfg := s.cfg
+	s.cfgMu.RUnlock()
 
 	switch r.Method {
 	case http.MethodGet:
 		// 脱敏处理，不返回完整的 API Key
-		displayCfg := *cfg
+		displayCfg := cfg
 		if len(displayCfg.APIKey) > 8 {
 			displayCfg.APIKey = displayCfg.APIKey[:4] + "..." + displayCfg.APIKey[len(displayCfg.APIKey)-4:]
 		}
@@ -291,6 +289,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to save config", http.StatusInternalServerError)
 			return
 		}
+
+		s.cfgMu.Lock()
+		s.cfg = cfg
+		s.cfgMu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

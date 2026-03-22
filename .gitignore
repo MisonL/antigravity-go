@@ -14,3 +14,4 @@ agy_data/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+.go-cache/
