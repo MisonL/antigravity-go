@@ -1,5 +1,9 @@
 # Antigravity Go - 旗舰级 Agentic IDE (V2)
 
+> [!CAUTION]
+> **这是一个实验性项目。**
+> 本项目的主要目的是**深入研究与探索 Antigravity 核心 AI 功能的工作原理**。它通过解构内核 RPC 协议与 Agent 决策链路，实现了一个独立的 IDE 环境原型，不建议在生产环境或处理高度机密代码时使用。
+
 Antigravity Go 是一个基于 `antigravity_core` 深度定制的旗舰级 Agentic 编码工作台。它集成了高性能内核、自研 Hybrid Agent Brain 以及 Premium 设计感的 Web 桌面。
 
 > [!NOTE]
