@@ -1,0 +1,16 @@
+# Binaries
+agy
+antigravity_core
+antigravity_core.bak
+bin/rg
+bin/fd
+tmp_build
+
+# Logs & Sessions
+*.log
+.agy_go/
+agy_data/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

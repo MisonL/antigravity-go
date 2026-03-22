@@ -1,0 +1,26 @@
+{
+  "core": {
+    "version": "1.20.6",
+    "binary": "./antigravity_core",
+    "arch": "x86_64",
+    "last_updated": "2026-03-22"
+  },
+  "tools": {
+    "ripgrep": {
+      "version": "13.0.0",
+      "arch": "x86_64"
+    },
+    "fd": {
+      "version": "Unknown/ArchMismatch",
+      "arch": "arm64"
+    }
+  },
+  "system": {
+    "os": "Darwin",
+    "host_arch": "x86_64"
+  },
+  "source_app": {
+    "path": "/Applications/Antigravity.app",
+    "version": "1.20.6"
+  }
+}
