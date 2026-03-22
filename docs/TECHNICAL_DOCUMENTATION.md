@@ -94,4 +94,16 @@ Agent 基于消息队列实现多轮对话：
 - **快照采集**: `CaptureScreenshotTool` 接收 `page_id` 参数，调用内核 RPC 获取图片二进制数据的 Base64 编码。
 - **会话持久化**: 采集到的 Base64 数据会被 `internal/session/recorder.go` 实时写入 `~/.agy_go/sessions/` 目录下的 `events.jsonl` 文件，确保 UI 调试过程可回溯。
 
+#### 5. 项目元数据与知识图谱 (Repository Insights)
+- **统计拉取**: `GetRepoInfosTool` 通过调用内核 `/GetRepoInfos` 接口，获取由内核索引器生成的项目宏观画像。
+- **数据解构**: 该接口返回的数据包含文件分布、符号总数及关键字统计（JSON 格式）。本项目将其解析为结构化文本，注入 Agent 的上下文，使其在执行重构任务前具备“全局视野”。
+
+#### 6. MCP 动态插件发现 (MCP Tool Integration)
+- **实时同步**: `GetMcpStatesTool` 调用内核 `/GetMcpServerStates` 接口，动态感知当前内核已挂载的所有 MCP (Model Context Protocol) 插件。
+- **工具透传**: 宿主程序将内核返回的插件能力簇（如 Google Search、PostgreSQL 操控等）转化为 LLM 可理解的 Tool Definition 格式，实现了内核能力的“按需扩展”。
+
+#### 7. 实验性功能动态审计 (Feature Auditing)
+- **状态探测**: 在 `agy doctor` 执行期间，系统会调用内核的 `/GetStaticExperimentStatus` 接口。
+- **开关映射**: 该实现通过遍历内核返回的 `Experiments` 数组，将复杂的内部 Feature Key 映射为直观的 ✅/❌ 状态，帮助开发者确认如 `CASCADE_V2` 等核心推理引擎是否已在当前内核版本中激活。
+
 ## 7. 运维与升级
