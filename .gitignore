@@ -1,0 +1,28 @@
+# Binaries
+agy
+tmp_build
+antigravity_core
+bin/
+
+# Logs
+*.log
+
+# Data
+agy_data/
+.agy/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Embedded assets (the build process copies these)
+# We keep the directory but ignore the generated files
+internal/server/dist/*
+!internal/server/dist/.gitkeep
+
+# Go
+vendor/
+*.exe
+*.test
+*.prof
