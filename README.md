@@ -45,12 +45,14 @@ Antigravity Go 是一个基于 `antigravity_core` 深度定制的旗舰级 Agent
 
 ### 核心提取 (Core Extraction)
 
-本项目依赖官方 Antigravity 客户端内置的内核引擎。在首次运行或官方客户端更新后，请执行以下命令提取最新内核：
+本项目目前直接包含了一个经过 Ad-hoc 签署的内核版本：**Antigravity Core V2 (Build 2026-03-22)**。
 
-```bash
-# 自动从官方 App 中提取并签署内核 (antigravity_core, rg, fd)
-make update-core
-```
+> [!TIP]
+> 如果您需要更新内核，请执行以下命令：
+> ```bash
+> # 自动从官方 App 中提取并签署最新内核 (antigravity_core, rg, fd)
+> make update-core
+> ```
 
 该脚本会自动完成：
 1. 定位官方应用内的 `language_server_macos_x64`。
