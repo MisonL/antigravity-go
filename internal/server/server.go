@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,6 +35,7 @@ type Server struct {
 	cfg           config.Config
 	workspaceRoot string
 	sessionsRoot  string
+	tasksRoot     string
 	host          *core.Host
 	agent         *agent.Agent
 	client        *rpc.Client // Added rpc.Client
@@ -42,6 +44,7 @@ type Server struct {
 	ws            *WSServer
 	httpServer    *http.Server     // Kept for Start/Stop
 	tm            *TerminalManager // Kept for HandleTerminalWS and NewWSServer
+	trajectory    session.TrajectoryGetter
 }
 
 func NewServer(cfg *config.Config, host *core.Host, agt *agent.Agent, lsp *tools.LSPManager, client *rpc.Client) *Server {
@@ -56,9 +59,12 @@ func NewServer(cfg *config.Config, host *core.Host, agt *agent.Agent, lsp *tools
 	}
 
 	sessionsRoot := ""
+	tasksRoot := ""
 	if serverCfg.DataDir != "" {
 		sessionsRoot = filepath.Join(serverCfg.DataDir, "sessions")
 		_ = os.MkdirAll(sessionsRoot, 0755)
+		tasksRoot = filepath.Join(serverCfg.DataDir, "tasks")
+		_ = os.MkdirAll(tasksRoot, 0755)
 	}
 	tm := NewTerminalManager()
 	s := &Server{
@@ -69,6 +75,7 @@ func NewServer(cfg *config.Config, host *core.Host, agt *agent.Agent, lsp *tools
 		cfg:           *serverCfg,
 		workspaceRoot: workspaceRoot,
 		sessionsRoot:  sessionsRoot,
+		tasksRoot:     tasksRoot,
 		host:          host,
 		agent:         agt,
 		client:        client,
@@ -122,10 +129,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/memories", s.handleMemories)
 	mux.HandleFunc("/api/mcp", s.handleMCP)
 	mux.HandleFunc("/api/observability/summary", s.handleObservabilitySummary)
+	mux.HandleFunc("/api/tasks", s.handleTasks)
 	mux.HandleFunc("/api/rollback", s.handleRollbackStep)
 	mux.HandleFunc("/api/visual-self-test/sample", s.handleVisualSelfTestSample)
 
 	mux.HandleFunc("/api/sessions", s.handleSessions)
+	mux.HandleFunc("/api/sessions/resume", s.handleSessionResume)
 	mux.HandleFunc("/api/sessions/", s.handleSessionDetail)
 	mux.HandleFunc("/ws", s.ws.HandleWS)
 
@@ -386,6 +395,59 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(metas)
 }
 
+type sessionResumeRequest struct {
+	TrajectoryID string `json:"trajectory_id"`
+}
+
+type sessionResumeResponse struct {
+	Status       string        `json:"status"`
+	TrajectoryID string        `json:"trajectory_id"`
+	Workspace    string        `json:"workspace_root"`
+	RedirectURL  string        `json:"redirect_url"`
+	WebSocketURL string        `json:"websocket_url"`
+	Messages     []interface{} `json:"messages"`
+}
+
+func (s *Server) handleSessionResume(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req sessionResumeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	trajectoryID := strings.TrimSpace(req.TrajectoryID)
+	if trajectoryID == "" {
+		http.Error(w, "trajectory_id is required", http.StatusBadRequest)
+		return
+	}
+
+	snapshot, err := session.LoadTrajectorySnapshot(trajectoryID, s.trajectoryGetter(), s.workspaceRoot)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	messages := make([]interface{}, 0, len(snapshot.Messages))
+	for _, msg := range snapshot.Messages {
+		messages = append(messages, msg)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sessionResumeResponse{
+		Status:       "ok",
+		TrajectoryID: trajectoryID,
+		Workspace:    snapshot.WorkspaceRoot,
+		RedirectURL:  s.buildResumeRedirectURL(r, trajectoryID),
+		WebSocketURL: s.buildResumeWebSocketURL(r, trajectoryID),
+		Messages:     messages,
+	})
+}
+
 func (s *Server) handleTrajectories(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -424,6 +486,56 @@ func (s *Server) handleTrajectoryDetail(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(trajectory)
+}
+
+func (s *Server) trajectoryGetter() session.TrajectoryGetter {
+	if s.trajectory != nil {
+		return s.trajectory
+	}
+	return corecap.NewTrajectoryManager(s.client)
+}
+
+func (s *Server) buildResumeRedirectURL(r *http.Request, trajectoryID string) string {
+	values := url.Values{}
+	values.Set("resume_trajectory", trajectoryID)
+	if strings.TrimSpace(s.authToken) != "" {
+		values.Set("token", s.authToken)
+	}
+	return (&url.URL{
+		Scheme:   s.externalScheme(r),
+		Host:     r.Host,
+		Path:     "/",
+		RawQuery: values.Encode(),
+	}).String()
+}
+
+func (s *Server) buildResumeWebSocketURL(r *http.Request, trajectoryID string) string {
+	values := url.Values{}
+	values.Set("resume_trajectory", trajectoryID)
+	if strings.TrimSpace(s.authToken) != "" {
+		values.Set("token", s.authToken)
+	}
+
+	scheme := "ws"
+	if s.externalScheme(r) == "https" {
+		scheme = "wss"
+	}
+	return (&url.URL{
+		Scheme:   scheme,
+		Host:     r.Host,
+		Path:     "/ws",
+		RawQuery: values.Encode(),
+	}).String()
+}
+
+func (s *Server) externalScheme(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		return forwarded
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
 }
 
 func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -80,6 +81,42 @@ func (m *TaskManager) LoadTask(id string) (*TaskRecord, error) {
 		return nil, err
 	}
 	return &record, nil
+}
+
+func (m *TaskManager) ListTasks() ([]TaskRecord, error) {
+	if m == nil {
+		return nil, fmt.Errorf("task manager is nil")
+	}
+
+	entries, err := os.ReadDir(m.rootDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []TaskRecord{}, nil
+		}
+		return nil, err
+	}
+
+	records := make([]TaskRecord, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		var record TaskRecord
+		if err := readJSON(filepath.Join(m.rootDir, entry.Name()), &record); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].UpdatedAt.Equal(records[j].UpdatedAt) {
+			return records[i].CreatedAt.After(records[j].CreatedAt)
+		}
+		return records[i].UpdatedAt.After(records[j].UpdatedAt)
+	})
+
+	return records, nil
 }
 
 func (m *TaskManager) save(record *TaskRecord, isNew bool) error {

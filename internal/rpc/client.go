@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -14,16 +15,18 @@ import (
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	mu         sync.RWMutex
 }
 
 // NewClient creates a new RPC client.
 func NewClient(port int) *Client {
-	return &Client{
-		baseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
+	client := &Client{
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+	client.SetPort(port)
+	return client
 }
 
 // servicePath is the Connect RPC service path.
@@ -31,7 +34,11 @@ const servicePath = "/exa.language_server_pb.LanguageServerService"
 
 // call makes a Connect RPC call.
 func (c *Client) call(method string, req, resp interface{}) error {
-	url := c.baseURL + servicePath + "/" + method
+	c.mu.RLock()
+	baseURL := c.baseURL
+	c.mu.RUnlock()
+
+	url := baseURL + servicePath + "/" + method
 
 	reqBody, err := json.Marshal(req)
 	if err != nil {
@@ -66,6 +73,23 @@ func (c *Client) call(method string, req, resp interface{}) error {
 	}
 
 	return nil
+}
+
+// SetPort updates the target port without replacing the client instance.
+func (c *Client) SetPort(port int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.baseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
+// Port returns the currently configured HTTP port.
+func (c *Client) Port() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var port int
+	_, _ = fmt.Sscanf(c.baseURL, "http://127.0.0.1:%d", &port)
+	return port
 }
 
 // ExperimentStatus represents an experiment entry.

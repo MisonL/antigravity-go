@@ -5,6 +5,7 @@ import { TerminalPanel } from './components/TerminalPanel';
 import { ApprovalModal, ApprovalRequest } from './components/ApprovalModal';
 import { MemoryModal } from './components/MemoryModal';
 import { McpPanel } from './components/McpPanel';
+import { ScoreboardPanel, TaskSummaryResponse } from './components/ScoreboardPanel';
 import { TrajectoryModal } from './components/TrajectoryModal';
 import { VisualSelfTestModal } from './components/VisualSelfTestModal';
 import {
@@ -69,6 +70,13 @@ interface VisualSelfTestSample {
   url: string;
 }
 
+interface ResumeSessionResponse {
+  messages?: unknown;
+  redirect_url?: string;
+  trajectory_id?: string;
+  websocket_url?: string;
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
@@ -89,10 +97,109 @@ function normalizeApprovalRequest(payload: unknown): ApprovalRequest {
   };
 }
 
+function normalizeChatHistory(payload: unknown): ChatMessage[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  const messages: ChatMessage[] = [];
+
+  for (const item of payload) {
+    if (!isRecord(item)) {
+      continue;
+    }
+
+    const role = typeof item.Role === 'string'
+      ? item.Role
+      : typeof item.role === 'string'
+        ? item.role
+        : '';
+    const content = typeof item.Content === 'string'
+      ? item.Content
+      : typeof item.content === 'string'
+        ? item.content
+        : '';
+
+    const toolCalls = Array.isArray(item.ToolCalls)
+      ? item.ToolCalls
+      : Array.isArray(item.tool_calls)
+        ? item.tool_calls
+        : [];
+
+    if (role === 'user' || role === 'assistant') {
+      if (content.trim()) {
+        messages.push({ role, content });
+      }
+      for (const toolCall of toolCalls) {
+        if (!isRecord(toolCall)) {
+          continue;
+        }
+        const name = typeof toolCall.Name === 'string'
+          ? toolCall.Name
+          : typeof toolCall.name === 'string'
+            ? toolCall.name
+            : '';
+        const args = typeof toolCall.Args === 'string'
+          ? toolCall.Args
+          : typeof toolCall.args === 'string'
+            ? toolCall.args
+            : '';
+        if (name) {
+          messages.push({
+            role: 'tool',
+            toolData: {
+              name,
+              args,
+              status: 'completed',
+            },
+          });
+        }
+      }
+      continue;
+    }
+
+    if (role === 'tool') {
+      const name = typeof item.Name === 'string'
+        ? item.Name
+        : typeof item.name === 'string'
+          ? item.name
+          : 'tool';
+      messages.push({
+        role: 'tool',
+        toolData: {
+          name,
+          args: '',
+          result: content,
+          status: 'completed',
+        },
+      });
+    }
+  }
+
+  return messages;
+}
+
+function buildWebSocketURL(token: string, resumeTrajectoryId: string, explicitURL = ''): string {
+  if (explicitURL.trim()) {
+    return explicitURL;
+  }
+
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const params = new URLSearchParams();
+  if (token) {
+    params.set('token', token);
+  }
+  if (resumeTrajectoryId) {
+    params.set('resume_trajectory', resumeTrajectoryId);
+  }
+  const suffix = params.toString();
+  return `${proto}://${window.location.host}/ws${suffix ? `?${suffix}` : ''}`;
+}
+
 function App() {
-  const token = (typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('token')?.trim() || ''
-    : '');
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const token = searchParams?.get('token')?.trim() || '';
+  const initialResumeTrajectoryId = searchParams?.get('resume_trajectory')?.trim() || '';
 
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [connected, setConnected] = useState(false);
@@ -140,11 +247,18 @@ function App() {
   const [rollbackStepId, setRollbackStepId] = useState('');
   const [rollbackError, setRollbackError] = useState('');
   const [rollbackSuccess, setRollbackSuccess] = useState('');
+  const [resumeTrajectoryId, setResumeTrajectoryId] = useState(initialResumeTrajectoryId);
+  const [resumeWebSocketURL, setResumeWebSocketURL] = useState('');
+  const [resumeLoadingId, setResumeLoadingId] = useState('');
+  const [resumeError, setResumeError] = useState('');
+  const [resumeSuccess, setResumeSuccess] = useState('');
   const [memories, setMemories] = useState<MemorySummary[]>([]);
   const [memoriesLoading, setMemoriesLoading] = useState(false);
   const [memoriesError, setMemoriesError] = useState('');
   const [observabilitySummary, setObservabilitySummary] = useState<ObservabilitySummary | null>(null);
   const [observabilityError, setObservabilityError] = useState('');
+  const [taskSummary, setTaskSummary] = useState<TaskSummaryResponse | null>(null);
+  const [taskSummaryError, setTaskSummaryError] = useState('');
   const [latestObservabilityEvent, setLatestObservabilityEvent] = useState<ObservabilityEvent | null>(null);
   const [showVisualSelfTestModal, setShowVisualSelfTestModal] = useState(false);
   const [visualSelfTestLoading, setVisualSelfTestLoading] = useState(false);
@@ -166,6 +280,23 @@ function App() {
       setObservabilitySummary(data as ObservabilitySummary);
     } catch (error) {
       setObservabilityError(getErrorMessage(error, '加载可观测性摘要失败。'));
+    }
+  }
+
+  async function fetchTaskSummary() {
+    setTaskSummaryError('');
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/tasks${suffix}`);
+      if (!resp.ok) {
+        throw new Error(`任务摘要请求失败: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      setTaskSummary(data as TaskSummaryResponse);
+    } catch (error) {
+      setTaskSummaryError(getErrorMessage(error, '加载任务摘要失败。'));
     }
   }
 
@@ -298,6 +429,63 @@ function App() {
     }
   }
 
+  async function resumeTrajectorySession(trajectoryId: string, syncLocation = true, showSuccess = true) {
+    if (!trajectoryId) {
+      return;
+    }
+
+    setResumeLoadingId(trajectoryId);
+    setResumeError('');
+    if (showSuccess) {
+      setResumeSuccess('');
+    }
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/sessions/resume${suffix}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trajectory_id: trajectoryId }),
+      });
+      if (!resp.ok) {
+        const message = await resp.text();
+        throw new Error(message || `会话恢复失败: ${resp.status}`);
+      }
+
+      const data = await resp.json() as ResumeSessionResponse;
+      setChatMessages(normalizeChatHistory(data.messages));
+      setStreamingResponse('');
+      setIsThinking(false);
+      setApprovalReq(null);
+      setInput('');
+      setResumeTrajectoryId(trajectoryId);
+      setResumeWebSocketURL(typeof data.websocket_url === 'string' ? data.websocket_url : '');
+      setShowTrajectoryModal(false);
+
+      if (syncLocation) {
+        const nextURL = typeof data.redirect_url === 'string' && data.redirect_url
+          ? data.redirect_url
+          : (() => {
+              const params = new URLSearchParams();
+              if (token) {
+                params.set('token', token);
+              }
+              params.set('resume_trajectory', trajectoryId);
+              return `/?${params.toString()}`;
+            })();
+        window.history.replaceState({}, '', nextURL);
+      }
+
+      if (showSuccess) {
+        setResumeSuccess(`已恢复会话: ${trajectoryId}`);
+      }
+    } catch (error) {
+      setResumeError(getErrorMessage(error, '恢复会话失败。'));
+    } finally {
+      setResumeLoadingId('');
+    }
+  }
+
   async function fetchVisualSelfTestSample(force = false) {
     if (!force && visualSelfTestSample) {
       return;
@@ -352,6 +540,24 @@ function App() {
   useEffect(() => {
     fetchConfig();
     fetchObservabilitySummary();
+    fetchTaskSummary();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      fetchTaskSummary();
+    }, 3000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!initialResumeTrajectoryId) {
+      return;
+    }
+    resumeTrajectorySession(initialResumeTrajectoryId, false, false);
   }, []);
 
   useEffect(() => {
@@ -363,6 +569,7 @@ function App() {
     }
 
     fetchObservabilitySummary();
+    fetchTaskSummary();
 
     if ((latestObservabilityEvent.plane === 'trajectory' || latestObservabilityEvent.plane === 'workspace') && showTrajectoryModal) {
       fetchTrajectories(true);
@@ -403,8 +610,7 @@ function App() {
   useEffect(() => { currentFileRef.current = currentFile; }, [currentFile]);
 
   useEffect(() => {
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsURL = `${proto}://${window.location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const wsURL = buildWebSocketURL(token, resumeTrajectoryId, resumeWebSocketURL);
     const ws = new WebSocket(wsURL);
     wsRef.current = ws;
 
@@ -516,7 +722,7 @@ function App() {
     return () => {
       ws.close();
     };
-  }, []); // Run once
+  }, [resumeTrajectoryId, resumeWebSocketURL, token]);
 
   const sendFeedback = (index: number, type: 'positive' | 'negative') => {
     if (!wsRef.current) return;
@@ -565,6 +771,7 @@ function App() {
           <h1>Antigravity <span className="highlight">控制台</span></h1>
         </div>
         <div className="status-bar">
+          <ScoreboardPanel summary={taskSummary} error={taskSummaryError} />
           <button className="badge badge-btn" data-testid="open-trajectory" type="button" onClick={handleOpenTrajectoryModal}>
             轨迹树 {observabilitySummary ? `(${observabilitySummary.trajectories.count})` : ''}
           </button>
@@ -833,8 +1040,12 @@ function App() {
           listError={trajectoriesError}
           onClose={() => setShowTrajectoryModal(false)}
           onRefresh={() => fetchTrajectories(true)}
+          onResume={(id) => resumeTrajectorySession(id)}
           onRollback={rollbackToStep}
           onSelect={(id) => fetchTrajectoryDetail(id, true)}
+          resumeError={resumeError}
+          resumeLoadingId={resumeLoadingId}
+          resumeSuccess={resumeSuccess}
           rollbackError={rollbackError}
           rollbackStepId={rollbackStepId}
           rollbackSuccess={rollbackSuccess}

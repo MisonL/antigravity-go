@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -32,12 +31,17 @@ type Host struct {
 	stderr io.ReadCloser
 	stdout io.ReadCloser
 
-	mu        sync.RWMutex
-	httpPort  int
-	httpsPort int
-	lspPort   int
-	ready     bool
-	logs      []string
+	mu            sync.RWMutex
+	httpPort      int
+	httpsPort     int
+	lspPort       int
+	ready         bool
+	logs          []string
+	restartCount  int
+	restarting    bool
+	processExited bool
+	generation    uint64
+	processDone   chan struct{}
 
 	readyChan     chan struct{}
 	portReadyChan chan struct{}
@@ -45,8 +49,21 @@ type Host struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	restartMu           sync.Mutex
+	watchdogOnce        sync.Once
+	heartbeatFailures   int
+	watchdogInterval    time.Duration
+	healthBudget        int
+	restartReadyTimeout time.Duration
+
 	OnLog         func(string) // Callback for new log lines
 	OnIndexStatus func(string) // Callback for indexing progress (start, complete, error)
+	OnRestart     func(RestartInfo) error
+}
+
+type RestartInfo struct {
+	HTTPPort     int
+	RestartCount int
 }
 
 // Config holds Host configuration.
@@ -59,14 +76,17 @@ type Config struct {
 func NewHost(cfg Config) *Host {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Host{
-		binPath:       cfg.BinPath,
-		dataDir:       cfg.DataDir,
-		indexer:       index.NewIndexer("."), // Index current project root
-		ctx:           ctx,
-		cancel:        cancel,
-		logs:          make([]string, 0, 1000),
-		readyChan:     make(chan struct{}),
-		portReadyChan: make(chan struct{}),
+		binPath:             cfg.BinPath,
+		dataDir:             cfg.DataDir,
+		indexer:             index.NewIndexer("."), // Index current project root
+		ctx:                 ctx,
+		cancel:              cancel,
+		logs:                make([]string, 0, 1000),
+		readyChan:           make(chan struct{}),
+		portReadyChan:       make(chan struct{}),
+		watchdogInterval:    3 * time.Second,
+		healthBudget:        3,
+		restartReadyTimeout: 30 * time.Second,
 	}
 }
 
@@ -100,45 +120,10 @@ func (h *Host) startIndexing() {
 
 // Start launches the antigravity_core process.
 func (h *Host) Start() error {
-	h.cmd = exec.CommandContext(h.ctx, h.binPath,
-		"--enable_lsp",
-		"--gemini_dir", h.dataDir, // Absolute path allowed here
-		"--app_data_dir", ".", // Must be relative
-		"--random_port=true", // Use random port to avoid conflicts
-		"--logtostderr=true", // Force logs to stderr
-	)
-
-	// Re-implementing standard StdinPipe with explicit Close()
-	var err error
-	h.stdin, err = h.cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("stdin pipe: %w", err)
+	if err := h.startProcess(); err != nil {
+		return err
 	}
-
-	logPath := filepath.Join(h.dataDir, "core.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("create log file: %w", err)
-	}
-	h.cmd.Stdout = logFile
-	h.cmd.Stderr = logFile
-
-	if err := h.cmd.Start(); err != nil {
-		logFile.Close()
-		return fmt.Errorf("start core: %w", err)
-	}
-
-	// Start tailing
-	go h.tailLogs(logPath)
-
-	// Inject Protobuf metadata and CLOSE stdin to signal configuration is complete
-	metadata := generateMetadata()
-	if _, err := h.stdin.Write(metadata); err != nil {
-		h.cmd.Process.Kill()
-		return fmt.Errorf("write metadata: %w", err)
-	}
-	h.stdin.Close() // CRITICAL: Signal initialization end
-
+	h.startWatchdog()
 	return nil
 }
 
@@ -152,7 +137,7 @@ func generateMetadata() []byte {
 }
 
 // tailLogs reads from the provided log file and parses port information.
-func (h *Host) tailLogs(path string) {
+func (h *Host) tailLogs(path string, done <-chan struct{}) {
 	// Open the file for reading
 	file, err := os.Open(path)
 	if err != nil {
@@ -177,13 +162,20 @@ func (h *Host) tailLogs(path string) {
 		select {
 		case <-h.ctx.Done():
 			return // Stop tailing if context is cancelled
+		case <-done:
+			return
 		default:
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err == io.EOF {
-					// Wait for a short period before trying to read again
-					time.Sleep(100 * time.Millisecond)
-					continue
+					select {
+					case <-h.ctx.Done():
+						return
+					case <-done:
+						return
+					case <-time.After(100 * time.Millisecond):
+						continue
+					}
 				}
 				fmt.Printf("Error reading from log file: %v\n", err)
 				return
@@ -342,10 +334,7 @@ func (h *Host) SetOnLog(cb func(string)) {
 // Stop terminates the core process.
 func (h *Host) Stop() error {
 	h.cancel()
-	if h.cmd != nil && h.cmd.Process != nil {
-		return h.cmd.Process.Kill()
-	}
-	return nil
+	return h.stopCurrentProcess()
 }
 
 // Status returns a summary of the host status.

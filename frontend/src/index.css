@@ -114,6 +114,57 @@ body {
   border-color: rgba(124, 58, 237, 0.18);
 }
 
+.scoreboard-panel {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.scoreboard-card {
+  min-width: 180px;
+  padding: 0.65rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: rgba(255, 255, 255, 0.86);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.scoreboard-card-alert {
+  border-color: rgba(220, 38, 38, 0.18);
+  background: rgba(220, 38, 38, 0.04);
+}
+
+.scoreboard-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.scoreboard-metric {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.scoreboard-text {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.scoreboard-text-muted {
+  color: var(--text-muted);
+}
+
+.scoreboard-text-error {
+  color: var(--error);
+}
+
 /* IDE Layout */
 .ide-layout {
   display: flex;
@@ -947,13 +998,29 @@ body {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.68);
   text-align: left;
-  cursor: pointer;
 }
 
 .data-list-item.active {
   border-color: rgba(37, 99, 235, 0.32);
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.16);
   background: rgba(37, 99, 235, 0.06);
+}
+
+.data-list-item-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.trajectory-resume-button {
+  width: 100%;
 }
 
 .data-list-item-header {
@@ -1250,6 +1317,10 @@ body {
   .status-bar {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .scoreboard-panel {
+    width: 100%;
   }
 
   .right-panel {
