@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +19,8 @@ import (
 	"github.com/mison/antigravity-go/internal/tools"
 )
 
+const initCmd = "init"
+
 type commandRuntime struct {
 	cfg      *config.Config
 	provider llm.Provider
@@ -24,6 +28,42 @@ type commandRuntime struct {
 	client   *rpc.Client
 	lspMgr   *tools.LSPManager
 	cwd      string
+}
+
+func runInit(args []string) {
+	fs := flag.NewFlagSet(initCmd, flag.ExitOnError)
+	moduleF := fs.String("module", "", "Go module path")
+	_ = fs.Parse(args)
+
+	if fs.NArg() != 0 {
+		fmt.Printf("用法: agy %s [--module example.com/project]\n", initCmd)
+		return
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("%s 初始化失败: %v\n", initCmd, err)
+		return
+	}
+
+	scaffold, err := newInitScaffold(cwd, *moduleF)
+	if err != nil {
+		fmt.Printf("%s 初始化失败: %v\n", initCmd, err)
+		return
+	}
+
+	written, err := scaffold.write()
+	if err != nil {
+		if rollbackErr := rollbackGeneratedFiles(cwd, written); rollbackErr != nil {
+			fmt.Printf("%s 回滚失败: %v\n", initCmd, rollbackErr)
+		}
+		fmt.Printf("%s 生成脚手架失败: %v\n", initCmd, err)
+		return
+	}
+
+	fmt.Printf("[OK] 已在 %s 生成 %s 脚手架。\n", cwd, scaffold.profile.DisplayName)
+	fmt.Printf("[INFO] Go module: %s\n", scaffold.profile.ModulePath)
+	fmt.Printf("[INFO] 前端目录: %s\n", filepath.Join(cwd, "frontend"))
 }
 
 func runReview(args []string) {
@@ -201,4 +241,15 @@ func streamAgentTask(agt *agent.Agent, prompt string) error {
 	}
 	fmt.Println()
 	return nil
+}
+
+func rollbackGeneratedFiles(root string, paths []string) error {
+	var errs []error
+	for idx := len(paths) - 1; idx >= 0; idx-- {
+		target := filepath.Join(root, paths[idx])
+		if err := os.RemoveAll(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }

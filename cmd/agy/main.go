@@ -41,6 +41,12 @@ func main() {
 		case autoFixCmd:
 			runAutoFix(os.Args[2:])
 			return
+		case initCmd:
+			runInit(os.Args[2:])
+			return
+		case deployCmd:
+			runDeploy(os.Args[2:])
+			return
 		case "resume":
 			runResume(os.Args[2:])
 			return
