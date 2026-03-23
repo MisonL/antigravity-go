@@ -2,13 +2,24 @@ package llm
 
 import "testing"
 
+func unwrapProvider(provider Provider) Provider {
+	if wrapped, ok := provider.(*retryBudgetProvider); ok {
+		return unwrapProvider(wrapped.base)
+	}
+	return provider
+}
+
 func TestBuildProviderAnthropicPassesOptions(t *testing.T) {
 	provider, err := BuildProvider("anthropic", "claude-test", "secret", "https://anthropic.example", 2048)
 	if err != nil {
 		t.Fatalf("BuildProvider returned error: %v", err)
 	}
 
-	anthropicProvider, ok := provider.(*AnthropicProvider)
+	if _, ok := provider.(*retryBudgetProvider); !ok {
+		t.Fatalf("expected provider to be wrapped with retry budget, got %T", provider)
+	}
+
+	anthropicProvider, ok := unwrapProvider(provider).(*AnthropicProvider)
 	if !ok {
 		t.Fatalf("expected *AnthropicProvider, got %T", provider)
 	}
@@ -27,7 +38,7 @@ func TestBuildProviderGeminiPassesMaxOutput(t *testing.T) {
 		t.Fatalf("BuildProvider returned error: %v", err)
 	}
 
-	geminiProvider, ok := provider.(*GeminiProvider)
+	geminiProvider, ok := unwrapProvider(provider).(*GeminiProvider)
 	if !ok {
 		t.Fatalf("expected *GeminiProvider, got %T", provider)
 	}
@@ -46,7 +57,7 @@ func TestBuildProviderOllamaUsesOpenAIAdapterDefaults(t *testing.T) {
 		t.Fatalf("BuildProvider returned error: %v", err)
 	}
 
-	openAIProvider, ok := provider.(*OpenAIProvider)
+	openAIProvider, ok := unwrapProvider(provider).(*OpenAIProvider)
 	if !ok {
 		t.Fatalf("expected *OpenAIProvider, got %T", provider)
 	}
@@ -67,7 +78,7 @@ func TestBuildProviderUsesEnvironmentAPIKey(t *testing.T) {
 		t.Fatalf("BuildProvider returned error: %v", err)
 	}
 
-	anthropicProvider, ok := provider.(*AnthropicProvider)
+	anthropicProvider, ok := unwrapProvider(provider).(*AnthropicProvider)
 	if !ok {
 		t.Fatalf("expected *AnthropicProvider, got %T", provider)
 	}

@@ -65,13 +65,17 @@ func BuildProvider(name, model, apiKey, baseURL string, maxOutput int) (Provider
 	switch name {
 	case "openai", "ollama", "lmstudio", "iflow":
 		opts := OpenAIOptions{BaseURL: baseURL, MaxTokens: maxOutput}
-		return NewOpenAIProviderWithOptions(apiKey, model, opts), nil
+		return WrapProviderWithRetryBudget(NewOpenAIProviderWithOptions(apiKey, model, opts), RetryBudget{}), nil
 	case "anthropic":
 		opts := AnthropicOptions{BaseURL: baseURL, MaxTokens: maxOutput}
-		return NewAnthropicProviderWithOptions(apiKey, model, opts), nil
+		return WrapProviderWithRetryBudget(NewAnthropicProviderWithOptions(apiKey, model, opts), RetryBudget{}), nil
 	case "gemini":
 		opts := GeminiOptions{BaseURL: baseURL, MaxOutputTokens: maxOutput}
-		return NewGeminiProviderWithOptions(apiKey, model, opts)
+		provider, err := NewGeminiProviderWithOptions(apiKey, model, opts)
+		if err != nil {
+			return nil, err
+		}
+		return WrapProviderWithRetryBudget(provider, RetryBudget{}), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", name)
 	}
