@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestBuildApprovalRequestPayloadForWriteFileIncludesDiff(t *testing.T) {
@@ -183,5 +185,26 @@ func TestConcurrentApprovals(t *testing.T) {
 		if results[i] != expected {
 			t.Errorf("request %d: expected %v, got %v", i, expected, results[i])
 		}
+	}
+}
+
+func TestWSProtocolHandlerUsesSessionWorkspaceRoot(t *testing.T) {
+	conn := &websocket.Conn{}
+	handler := &wsProtocolHandler{
+		server: &WSServer{
+			workspaceRoot: "/tmp/default-root",
+			sessions: map[*websocket.Conn]*webSession{
+				conn: {
+					workspaceRoot: "/tmp/resumed-root",
+				},
+			},
+		},
+	}
+
+	if got := handler.workspaceRootForConn(conn); got != "/tmp/resumed-root" {
+		t.Fatalf("expected resumed workspace root, got %q", got)
+	}
+	if got := handler.workspaceRootForConn(&websocket.Conn{}); got != "/tmp/default-root" {
+		t.Fatalf("expected fallback workspace root, got %q", got)
 	}
 }

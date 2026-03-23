@@ -246,6 +246,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "注册工作区失败: %v\n", err)
 		os.Exit(1)
 	}
+	host.SetOnRestart(func(info core.RestartInfo) error {
+		client.SetPort(info.HTTPPort)
+		return trackWorkspaceRoot(client, cwd)
+	})
 	lspMgr = tools.NewLSPManager(host, cwd)
 
 	if provider != nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/mison/antigravity-go/internal/agent"
+	"github.com/mison/antigravity-go/internal/corecap"
 	"github.com/mison/antigravity-go/internal/rpc"
 	"github.com/mison/antigravity-go/internal/session"
 	"github.com/mison/antigravity-go/internal/tools"
@@ -26,8 +27,9 @@ type WSMessage struct {
 }
 
 type webSession struct {
-	agent *agent.Agent
-	rec   *session.Recorder
+	agent         *agent.Agent
+	rec           *session.Recorder
+	workspaceRoot string
 
 	pendingMu sync.Mutex
 	pending   map[string]chan approvalDecision
@@ -46,10 +48,11 @@ type WSServer struct {
 	defaultApprovals string
 	sessionsRoot     string
 	sessions         map[*websocket.Conn]*webSession
+	protocol         *wsProtocolHandler
 }
 
 func NewWSServer(baseAgent *agent.Agent, client *rpc.Client, tm *TerminalManager, workspaceRoot string, approvals string, sessionsRoot string) *WSServer {
-	return &WSServer{
+	ws := &WSServer{
 		clients:          make(map[*websocket.Conn]bool),
 		broadcast:        make(chan []byte),
 		baseAgent:        baseAgent,
@@ -60,6 +63,8 @@ func NewWSServer(baseAgent *agent.Agent, client *rpc.Client, tm *TerminalManager
 		sessionsRoot:     sessionsRoot,
 		sessions:         make(map[*websocket.Conn]*webSession),
 	}
+	ws.protocol = newWSProtocolHandler(ws)
+	return ws
 }
 
 func (ws *WSServer) ReplaceToolsByPrefix(prefix string, replacements []tools.Tool) {
@@ -100,6 +105,17 @@ func (ws *WSServer) BroadcastObservabilityEvent(toolName string, status string, 
 }
 
 func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
+	resumeTrajectoryID := strings.TrimSpace(r.URL.Query().Get("resume_trajectory"))
+	var snapshot *session.TrajectorySnapshot
+	if resumeTrajectoryID != "" {
+		var err error
+		snapshot, err = session.LoadTrajectorySnapshot(resumeTrajectoryID, corecap.NewTrajectoryManager(ws.client), ws.workspaceRoot)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return isAllowedLocalOrigin(r)
@@ -111,30 +127,25 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var sess *webSession
+	if ws.baseAgent != nil {
+		var err error
+		sess, err = ws.newSession(snapshot)
+		if err != nil {
+			ws.sendJSON(conn, map[string]interface{}{
+				"type":  "chat_error",
+				"error": err.Error(),
+			})
+			conn.Close()
+			return
+		}
+	}
+
 	ws.mutex.Lock()
 	ws.clients[conn] = true
-	if ws.baseAgent != nil {
-		agentForConn := ws.baseAgent.CloneWithPrompt(ws.baseAgent.GetSystemPrompt())
-		agentForConn.RegisterTool(agentForConn.GetSpecialistTool())
-		agentForConn.SetPermissionFunc(ws.permissionFuncForConn(conn, ws.defaultApprovals))
-
-		var rec *session.Recorder
-		if ws.sessionsRoot != "" {
-			r, err := session.New(ws.sessionsRoot, session.Metadata{
-				WorkspaceRoot: ws.workspaceRoot,
-				Interface:     "web",
-				Approvals:     ws.defaultApprovals,
-			})
-			if err == nil {
-				rec = r
-			}
-		}
-
-		ws.sessions[conn] = &webSession{
-			agent:   agentForConn,
-			rec:     rec,
-			pending: make(map[string]chan approvalDecision),
-		}
+	if sess != nil {
+		sess.agent.SetPermissionFunc(ws.protocol.PermissionFunc(conn, ws.defaultApprovals))
+		ws.sessions[conn] = sess
 	}
 	ws.mutex.Unlock()
 
@@ -143,6 +154,15 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 		"type":    "info",
 		"message": "已连接到 Antigravity 后端",
 	})
+	if resumeTrajectoryID != "" && snapshot != nil {
+		ws.sendJSON(conn, map[string]interface{}{
+			"type": "session_resumed",
+			"data": map[string]string{
+				"trajectory_id":  resumeTrajectoryID,
+				"workspace_root": snapshot.WorkspaceRoot,
+			},
+		})
+	}
 
 	// Read loop - handle incoming messages
 	go func() {
@@ -185,7 +205,7 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 					ws.client.RecordChatFeedback(feedback)
 				}
 			case "approval_response", "permission_response":
-				ws.handleApprovalResponse(conn, msg.Payload)
+				ws.protocol.HandleApprovalResponse(conn, msg.Payload)
 			}
 		}
 	}()
@@ -215,7 +235,7 @@ func (ws *WSServer) handleChat(conn *websocket.Conn, input string) {
 	}
 	// Inject File Change Callback
 	ctx = context.WithValue(ctx, tools.FileChangeKey{}, func(path string) {
-		relPath := ws.normalizeWorkspacePath(path)
+		relPath := ws.normalizeWorkspacePathForConn(conn, path)
 		ws.Broadcast(map[string]string{
 			"type": "file_change",
 			"path": relPath,
@@ -341,15 +361,66 @@ func (ws *WSServer) getSession(conn *websocket.Conn) *webSession {
 	return ws.sessions[conn]
 }
 
-func (ws *WSServer) normalizeWorkspacePath(p string) string {
-	if p == "" || ws.workspaceRoot == "" {
+func (ws *WSServer) newSession(snapshot *session.TrajectorySnapshot) (*webSession, error) {
+	agentForConn := ws.baseAgent.CloneWithPrompt(ws.baseAgent.GetSystemPrompt())
+	agentForConn.RegisterTool(agentForConn.GetSpecialistTool())
+
+	workspaceRoot := ws.workspaceRoot
+	if snapshot != nil && strings.TrimSpace(snapshot.WorkspaceRoot) != "" {
+		workspaceRoot = snapshot.WorkspaceRoot
+	}
+	var tracker session.WorkspaceTracker
+	if ws.client != nil {
+		tracker = corecap.NewWorkspaceManager(ws.client)
+	}
+	if snapshot != nil {
+		if err := session.RestoreAgentFromSnapshot(agentForConn, tracker, snapshot); err != nil {
+			return nil, err
+		}
+	}
+
+	var rec *session.Recorder
+	if ws.sessionsRoot != "" {
+		r, err := session.New(ws.sessionsRoot, session.Metadata{
+			WorkspaceRoot: workspaceRoot,
+			Interface:     "web",
+			Approvals:     ws.defaultApprovals,
+		})
+		if err == nil {
+			rec = r
+			if snapshot != nil {
+				if err := rec.SaveMessages(agentForConn.SnapshotMessages()); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	return &webSession{
+		agent:         agentForConn,
+		rec:           rec,
+		workspaceRoot: workspaceRoot,
+		pending:       make(map[string]chan approvalDecision),
+	}, nil
+}
+
+func (ws *WSServer) normalizeWorkspacePathForConn(conn *websocket.Conn, p string) string {
+	root := ws.workspaceRoot
+	if sess := ws.getSession(conn); sess != nil && strings.TrimSpace(sess.workspaceRoot) != "" {
+		root = sess.workspaceRoot
+	}
+	return normalizeWorkspacePath(root, p)
+}
+
+func normalizeWorkspacePath(root string, p string) string {
+	if p == "" || root == "" {
 		return p
 	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return p
 	}
-	rel, err := filepath.Rel(ws.workspaceRoot, abs)
+	rel, err := filepath.Rel(root, abs)
 	if err != nil {
 		return p
 	}
@@ -373,133 +444,6 @@ func (s *webSession) cancelPendingApprovals(reason string) {
 		}
 		close(ch)
 	}
-}
-
-func (ws *WSServer) permissionFuncForConn(conn *websocket.Conn, mode string) agent.PermissionFunc {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "full":
-		return func(req agent.PermissionRequest) bool { return true }
-	case "read-only", "readonly":
-		return func(req agent.PermissionRequest) bool { return false }
-	default:
-		// prompt
-		return func(req agent.PermissionRequest) bool {
-			sess := ws.getSession(conn)
-			if sess == nil {
-				return false
-			}
-
-			reqID := fmt.Sprintf("%d", time.Now().UnixNano())
-			ch := make(chan approvalDecision, 1)
-
-			sess.pendingMu.Lock()
-			sess.pending[reqID] = ch
-			sess.pendingMu.Unlock()
-
-			payload := buildApprovalRequestPayload(req.ToolName, req.Args, ws.workspaceRoot)
-			if strings.TrimSpace(req.Summary) != "" {
-				payload.Summary = req.Summary
-			}
-			if strings.TrimSpace(req.Preview) != "" {
-				if strings.TrimSpace(payload.Preview) != "" {
-					payload.Preview = payload.Preview + "\n\n" + req.Preview
-				} else {
-					payload.Preview = req.Preview
-				}
-			}
-			if len(req.Metadata) > 0 {
-				if payload.Metadata == nil {
-					payload.Metadata = make(map[string]any, len(req.Metadata))
-				}
-				for key, value := range req.Metadata {
-					payload.Metadata[key] = value
-				}
-			}
-			payload.ID = reqID
-			ws.sendJSON(conn, map[string]interface{}{
-				"type": "approval_request",
-				"data": payload,
-			})
-
-			select {
-			case decision, ok := <-ch:
-				allow := ok && decision.Allow
-				if sess.rec != nil {
-					record := map[string]any{
-						"id":    reqID,
-						"tool":  req.ToolName,
-						"allow": allow,
-					}
-					if decision.Reason != "" {
-						record["reason"] = decision.Reason
-					}
-					if !ok {
-						record["reason"] = "channel_closed"
-					}
-					_ = sess.rec.Append("approval_decision", record)
-				}
-				return allow
-			case <-time.After(approvalWaitTimeout):
-				// 超时需要清理 pending，避免泄漏并让前端弹窗可关闭
-				sess.pendingMu.Lock()
-				ch2, ok := sess.pending[reqID]
-				if ok {
-					delete(sess.pending, reqID)
-				}
-				sess.pendingMu.Unlock()
-				if ok {
-					select {
-					case ch2 <- approvalDecision{Allow: false, Reason: "timeout"}:
-					default:
-					}
-					close(ch2)
-					if sess.rec != nil {
-						_ = sess.rec.Append("approval_decision", map[string]any{
-							"id":     reqID,
-							"tool":   req.ToolName,
-							"allow":  false,
-							"reason": "timeout",
-						})
-					}
-					ws.sendJSON(conn, map[string]interface{}{
-						"type": "approval_timeout",
-						"data": map[string]string{
-							"id": reqID,
-						},
-					})
-				}
-				return false
-			}
-		}
-	}
-}
-
-func (ws *WSServer) handleApprovalResponse(conn *websocket.Conn, payload string) {
-	var resp approvalResponsePayload
-	if err := json.Unmarshal([]byte(payload), &resp); err != nil {
-		return
-	}
-	if resp.ID == "" {
-		return
-	}
-
-	sess := ws.getSession(conn)
-	if sess == nil {
-		return
-	}
-
-	sess.pendingMu.Lock()
-	ch, ok := sess.pending[resp.ID]
-	if ok {
-		delete(sess.pending, resp.ID)
-	}
-	sess.pendingMu.Unlock()
-
-	if !ok {
-		return
-	}
-	ch <- approvalDecision{Allow: resp.Allow}
-	close(ch)
 }
 
 func (ws *WSServer) TotalTokenUsage() int {

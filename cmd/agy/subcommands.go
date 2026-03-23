@@ -9,13 +9,16 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mison/antigravity-go/internal/agent"
 	"github.com/mison/antigravity-go/internal/config"
 	"github.com/mison/antigravity-go/internal/core"
 	"github.com/mison/antigravity-go/internal/corecap"
 	"github.com/mison/antigravity-go/internal/llm"
 	"github.com/mison/antigravity-go/internal/rpc"
+	"github.com/mison/antigravity-go/internal/session"
 	"github.com/mison/antigravity-go/internal/tools"
+	"github.com/mison/antigravity-go/internal/tui"
 )
 
 const (
@@ -180,8 +183,164 @@ func runOnce(args []string) {
 	fmt.Println()
 }
 
-func runResume(args []string) { fmt.Println("Resume command is available in TUI mode.") }
-func runMCP(args []string)    { fmt.Println("MCP command: use 'agy mcp list' to see states.") }
+func runResume(args []string) {
+	fs := flag.NewFlagSet("resume", flag.ExitOnError)
+	providerF := fs.String("provider", "", "LLM provider")
+	modelF := fs.String("model", "", "Model to use")
+	baseURLF := fs.String("base-url", "", "Base URL")
+	approvalsF := fs.String("approvals", "prompt", "Approval mode")
+	_ = fs.Parse(args)
+
+	if fs.NArg() != 1 {
+		fmt.Println("用法: agy resume <trajectory_id>")
+		return
+	}
+	trajectoryID := strings.TrimSpace(fs.Arg(0))
+	if trajectoryID == "" {
+		fmt.Println("trajectory_id 不能为空")
+		return
+	}
+
+	cfg, err := config.Load()
+	if err != nil || cfg == nil {
+		cfg = config.DefaultConfig()
+		if err != nil {
+			fmt.Printf("[WARN] 读取配置失败: %v\n", err)
+		}
+	}
+	if *providerF != "" {
+		cfg.Provider = *providerF
+	}
+	if *modelF != "" {
+		cfg.Model = *modelF
+	}
+	if *baseURLF != "" {
+		cfg.BaseURL = *baseURLF
+	}
+	cfg.Approvals = *approvalsF
+
+	provider, err := buildProvider(cfg)
+	if err != nil {
+		fmt.Printf("Provider 初始化失败: %v\n", err)
+		return
+	}
+
+	bin, err := resolveCoreBinary(cfg)
+	if err != nil {
+		fmt.Printf("无法定位 antigravity_core: %v\n", err)
+		return
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+
+	host := core.NewHost(core.Config{BinPath: bin, DataDir: cfg.DataDir})
+	if err := host.Start(); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	defer func() {
+		if err := host.Stop(); err != nil {
+			fmt.Printf("WARN: 停止内核失败: %v\n", err)
+		}
+	}()
+
+	if err := host.WaitReady(30 * time.Second); err != nil {
+		fmt.Printf("Timeout: %v\n", err)
+		return
+	}
+
+	rpcClient := rpc.NewClient(host.HTTPPort())
+	snapshot, err := session.LoadTrajectorySnapshot(trajectoryID, corecap.NewTrajectoryManager(rpcClient), cwd)
+	if err != nil {
+		fmt.Printf("恢复轨迹失败: %v\n", err)
+		return
+	}
+
+	workspaceRoot := snapshot.WorkspaceRoot
+	if workspaceRoot == "" {
+		workspaceRoot = cwd
+	}
+
+	lspMgr := tools.NewLSPManager(host, workspaceRoot)
+	baseAgt := buildBaseAgent(cfg, provider, host, rpcClient, lspMgr, workspaceRoot)
+	agt := baseAgt.CloneWithPrompt(baseAgt.GetSystemPrompt())
+	agt.RegisterTool(agt.GetSpecialistTool())
+
+	permReqChan := make(chan tui.PermissionRequest)
+	switch cfg.Approvals {
+	case "full":
+		agt.SetPermissionFunc(func(req agent.PermissionRequest) bool { return true })
+	case "read-only":
+		agt.SetPermissionFunc(func(req agent.PermissionRequest) bool { return false })
+	default:
+		agt.SetPermissionFunc(func(req agent.PermissionRequest) bool {
+			resChan := make(chan bool)
+			permReqChan <- tui.PermissionRequest{
+				ToolName: req.ToolName,
+				Args:     req.Args,
+				Response: resChan,
+			}
+			return <-resChan
+		})
+	}
+
+	if err := session.RestoreAgentFromSnapshot(agt, corecap.NewWorkspaceManager(rpcClient), snapshot); err != nil {
+		fmt.Printf("注入历史消息失败: %v\n", err)
+		return
+	}
+
+	sessionsRoot := filepath.Join(cfg.DataDir, "sessions")
+	if err := os.MkdirAll(sessionsRoot, 0755); err != nil {
+		fmt.Printf("创建会话目录失败: %v\n", err)
+		return
+	}
+
+	rec, err := session.New(sessionsRoot, session.Metadata{
+		WorkspaceRoot: workspaceRoot,
+		Interface:     "tui",
+		Approvals:     cfg.Approvals,
+		Provider:      cfg.Provider,
+		Model:         cfg.Model,
+	})
+	if err != nil {
+		fmt.Printf("创建恢复会话失败: %v\n", err)
+		return
+	}
+	defer func() {
+		if err := rec.Close(); err != nil {
+			fmt.Printf("[WARN] 关闭会话记录失败: %v\n", err)
+		}
+	}()
+	if err := rec.SaveMessages(agt.SnapshotMessages()); err != nil {
+		fmt.Printf("写入恢复快照失败: %v\n", err)
+		return
+	}
+
+	agt.SetToolCallback(func(event, name, args, result string) {
+		if err := rec.Append("tool_"+event, map[string]string{
+			"name":   name,
+			"args":   args,
+			"result": result,
+		}); err != nil {
+			fmt.Printf("[WARN] 记录工具事件失败: %v\n", err)
+		}
+	})
+
+	fmt.Printf("[INFO] 已恢复轨迹: %s\n", trajectoryID)
+	fmt.Printf("[INFO] 工作区: %s\n", workspaceRoot)
+	fmt.Printf("[INFO] Session: %s\n", rec.Meta.ID)
+
+	model := tui.NewModel(host, rpcClient, agt, permReqChan, cfg.Approvals, rec)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("运行 TUI 失败: %v\n", err)
+	}
+}
+
+func runMCP(args []string) { fmt.Println("MCP command: use 'agy mcp list' to see states.") }
 func runModels(args []string) {
 	fmt.Println("Models command: use 'agy models --provider iflow' to see list.")
 }
@@ -192,6 +351,7 @@ func buildProvider(cfg *config.Config) (llm.Provider, error) {
 
 func buildBaseAgent(cfg *config.Config, provider llm.Provider, host *core.Host, rpcClient *rpc.Client, lspMgr *tools.LSPManager, cwd string) *agent.Agent {
 	baseAgt := agent.NewAgent(provider, nil, cfg.MaxContext)
+	baseAgt.SetTaskStore(session.NewTaskManager(filepath.Join(cfg.DataDir, "tasks")))
 	baseAgt.RegisterTool(tools.NewRunCommandTool())
 	baseAgt.RegisterTool(tools.NewReadDirTool())
 	baseAgt.RegisterTool(tools.NewReadFileTool())
@@ -221,7 +381,7 @@ func buildBaseAgent(cfg *config.Config, provider llm.Provider, host *core.Host, 
 	baseAgt.RegisterTool(coreV2.RollbackToStepTool())
 	baseAgt.RegisterTool(coreV2.WorkspaceTrackTool())
 
-	baseAgt.SetSystemPrompt(`你是嵌入在 CLI Agent 中的资深工程师助手。能力包含文件操作、内核 RPC 调用、LSP 智能及浏览器自动化操控。`)
+	baseAgt.SetSystemPrompt(agent.DefaultSystemPrompt)
 	return baseAgt
 }
 
