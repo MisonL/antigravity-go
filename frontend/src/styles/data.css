@@ -4,12 +4,13 @@
   height: 100%;
   padding: var(--space-4);
   overflow: auto;
+  background: rgba(248, 250, 252, 0.52);
 }
 
 .filetree-title {
   margin: 0 0 var(--space-4);
-  font-size: 0.9rem;
-  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
@@ -19,8 +20,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0.45rem 0.6rem;
-  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  border: 1px solid transparent;
 }
 
 .filetree-state--error {
@@ -28,7 +29,20 @@
 }
 
 .filetree-node:hover {
-  background: rgba(15, 108, 189, 0.08);
+  border-color: rgba(15, 108, 189, 0.16);
+  background: rgba(15, 108, 189, 0.06);
+}
+
+.filetree-node {
+  transition:
+    transform var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.filetree-node:focus-visible {
+  transform: translateX(2px);
 }
 
 .filetree-name,
@@ -51,10 +65,11 @@
   place-items: center;
   height: 100%;
   padding: var(--space-6);
+  background: rgba(248, 250, 252, 0.42);
 }
 
 .codeviewer-empty__inner {
-  max-width: 30rem;
+  max-width: 32rem;
   text-align: center;
 }
 
@@ -65,18 +80,19 @@
 
 .codeviewer-status {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.78);
+  border-top: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(248, 250, 252, 0.74);
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 1.8rem;
+  min-height: 1.9rem;
   padding: 0 var(--space-3);
-  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
   font-size: 0.78rem;
 }
 
@@ -145,14 +161,29 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(248, 250, 252, 0.82);
+  box-shadow: none;
+  transition:
+    transform var(--duration-fast) var(--ease-emphasis),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.data-list-item:hover,
+.memory-card:hover,
+.mcp-server-card:hover,
+.trajectory-step-card:hover,
+.approval-meta-card:hover {
+  transform: none;
+  border-color: rgba(15, 108, 189, 0.18);
+  box-shadow: none;
 }
 
 .data-list-item.active {
   border-color: rgba(15, 108, 189, 0.24);
-  box-shadow: inset 0 0 0 1px rgba(15, 108, 189, 0.12);
+  box-shadow: none;
 }
 
 .data-list-item-select {
@@ -161,6 +192,7 @@
   gap: var(--space-2);
   align-items: flex-start;
   text-align: left;
+  width: 100%;
 }
 
 .data-list-item-header,
@@ -244,6 +276,16 @@
   flex-wrap: wrap;
 }
 
+.data-json {
+  margin: 0;
+  padding: var(--space-4);
+  background: rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .memory-card-title-group,
 .mcp-form {
   display: flex;
@@ -274,7 +316,7 @@
   width: fit-content;
   min-height: 1.9rem;
   padding: 0 var(--space-3);
-  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
   background: rgba(15, 108, 189, 0.08);
   color: var(--color-primary);
   font-size: 0.78rem;
@@ -284,25 +326,8 @@
   max-width: 860px;
 }
 
-.approval-modal-body {
-  gap: var(--space-4);
-}
-
-.approval-meta-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-@media (max-width: 1024px) {
-  .data-modal-shell {
-    grid-template-columns: 1fr;
-    min-height: auto;
-  }
-
-  .data-list-panel {
-    border-right: 0;
-    border-bottom: 1px solid var(--color-border);
-  }
-
+@media (max-width: 900px) {
+  .data-modal-shell,
   .data-detail-grid,
   .approval-meta-grid,
   .mcp-capability-grid {

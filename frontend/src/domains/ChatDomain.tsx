@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
-import type { ApprovalRequest } from '../components/ApprovalModal';
+import type { ApprovalDecisionInput, ApprovalRequest } from '../components/ApprovalModal';
+import { ScoreboardPanel, type TaskSummaryResponse } from '../components/ScoreboardPanel';
 import { useAppDomain } from './AppDomainContext';
 import {
   buildWebSocketURL,
@@ -17,7 +18,7 @@ export interface ChatDomainState {
   chatEndRef: RefObject<HTMLDivElement | null>;
   chatMessages: ChatMessage[];
   connected: boolean;
-  handleApprovalDecision: (allow: boolean) => void;
+  handleApprovalDecision: (decision: ApprovalDecisionInput) => void;
   handleCodeAction: (code: string) => void;
   handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   handleSendMessage: () => void;
@@ -35,7 +36,18 @@ export interface ChatDomainState {
 interface ChatWorkspaceProps {
   chat: ChatDomainState;
   onOpenVisualSelfTest: () => void;
+  scoreboardError: string;
+  scoreboardSummary: TaskSummaryResponse | null;
   visualSelfTestSample: VisualSelfTestSample | null;
+}
+
+function smoothScrollToRef(ref: RefObject<HTMLDivElement | null>) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.requestAnimationFrame(() => {
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  });
 }
 
 function replaceLatestRunningTool(
@@ -61,14 +73,14 @@ function replaceLatestRunningTool(
   return next;
 }
 
-function toolDisplay(toolData?: ToolData) {
+function toolDisplay(t: (key: string, ...args: unknown[]) => string, toolData?: ToolData) {
   if (!toolData) {
     return { args: '', badge: '', name: 'tool' };
   }
   if (toolData.name !== 'ask_specialist') {
     return {
       args: toolData.args,
-      badge: toolData.status === 'running' ? '运行中' : toolData.status === 'error' ? '失败' : '完成',
+      badge: toolData.status === 'running' ? t('chat.badge.running') : toolData.status === 'error' ? t('chat.badge.failed') : t('chat.badge.completed'),
       name: toolData.name,
     };
   }
@@ -76,8 +88,8 @@ function toolDisplay(toolData?: ToolData) {
   const args = parseSpecialistToolArgs(toolData.args);
   return {
     args: typeof args.task === 'string' ? args.task : toolData.args,
-    badge: typeof args.role === 'string' ? args.role : 'specialist',
-    name: typeof args.role === 'string' ? `专家调用 ${args.role}` : '专家调用',
+    badge: typeof args.role === 'string' ? args.role : t('chat.badge.specialist'),
+    name: typeof args.role === 'string' ? t('chat.tool.specialist_role', args.role) : t('chat.tool.specialist'),
   };
 }
 
@@ -90,6 +102,9 @@ export function useChatDomain(): ChatDomainState {
     setChatBridge,
     setResumeTrajectoryId,
     setResumeWebSocketURL,
+    locale,
+    showNotification,
+    t,
     token,
     touchFileRefresh,
   } = useAppDomain();
@@ -146,20 +161,24 @@ export function useChatDomain(): ChatDomainState {
   }, [hydrateResumeSession, setChatBridge, setInput]);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    smoothScrollToRef(logsEndRef);
   }, [logs]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    smoothScrollToRef(chatEndRef);
   }, [chatMessages, streamingResponse]);
 
   useEffect(() => {
-    const wsURL = buildWebSocketURL(token, resumeTrajectoryId, resumeWebSocketURL);
+    const wsURL = buildWebSocketURL(token, resumeTrajectoryId, locale, resumeWebSocketURL);
     const ws = new WebSocket(wsURL);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setConnected(true);
+      ws.send(JSON.stringify({
+        type: 'set_locale',
+        payload: JSON.stringify({ locale }),
+      }));
     };
 
     ws.onclose = () => {
@@ -201,7 +220,7 @@ export function useChatDomain(): ChatDomainState {
             setStreamingResponse('');
             setChatMessages((messages) => [...messages, {
               role: 'assistant',
-              content: `错误：${String(msg.error || '未知错误')}`,
+              content: t('common.error.prefix', String(msg.error || t('common.unknown_error'))),
             }]);
             return;
           case 'file_change':
@@ -244,7 +263,7 @@ export function useChatDomain(): ChatDomainState {
             setApprovalReq((prev) => (prev && prev.id === requestId ? null : prev));
             setChatMessages((messages) => [...messages, {
               role: 'assistant',
-              content: '授权请求已超时，系统已自动拒绝，请重新触发操作。',
+              content: t('chat.approval_timeout'),
             }]);
             return;
           }
@@ -262,7 +281,7 @@ export function useChatDomain(): ChatDomainState {
     return () => {
       ws.close();
     };
-  }, [resumeTrajectoryId, resumeWebSocketURL, token, touchFileRefresh]);
+  }, [locale, resumeTrajectoryId, resumeWebSocketURL, t, token, touchFileRefresh]);
 
   const sendFeedback = useCallback((index: number, type: 'positive' | 'negative') => {
     if (!wsRef.current) {
@@ -276,8 +295,11 @@ export function useChatDomain(): ChatDomainState {
         timestamp: new Date().toISOString(),
       }),
     }));
-    window.alert(type === 'positive' ? '感谢反馈，我会继续优化。' : '收到反馈，我会改进输出质量。');
-  }, []);
+    showNotification(
+      type === 'positive' ? t('chat.feedback.positive') : t('chat.feedback.negative'),
+      type === 'positive' ? 'success' : 'info',
+    );
+  }, [showNotification, t]);
 
   const handleSendMessage = useCallback(() => {
     if (!input.trim() || !wsRef.current || isThinking || approvalReq) {
@@ -288,13 +310,17 @@ export function useChatDomain(): ChatDomainState {
     setInputState('');
   }, [approvalReq, input, isThinking]);
 
-  const handleApprovalDecision = useCallback((allow: boolean) => {
+  const handleApprovalDecision = useCallback((decision: ApprovalDecisionInput) => {
     if (!wsRef.current || !approvalReq) {
       return;
     }
     wsRef.current.send(JSON.stringify({
       type: 'approval_response',
-      payload: JSON.stringify({ allow, id: approvalReq.id }),
+      payload: JSON.stringify({
+        allow: decision.allow,
+        approved_chunk_ids: decision.approvedChunkIDs,
+        id: approvalReq.id,
+      }),
     }));
     setApprovalReq(null);
   }, [approvalReq]);
@@ -307,8 +333,8 @@ export function useChatDomain(): ChatDomainState {
   }, [handleSendMessage]);
 
   const handleCodeAction = useCallback((code: string) => {
-    setInputState(formatCodeActionPrompt(currentFile, code));
-  }, [currentFile]);
+    setInputState(formatCodeActionPrompt(t, currentFile, code));
+  }, [currentFile, t]);
 
   return {
     approvalReq,
@@ -334,29 +360,36 @@ export function useChatDomain(): ChatDomainState {
 export function ChatWorkspace({
   chat,
   onOpenVisualSelfTest,
+  scoreboardError,
+  scoreboardSummary,
   visualSelfTestSample,
 }: ChatWorkspaceProps) {
+  const { t } = useAppDomain();
+
   return (
     <>
       <div className="card glass-panel chat-panel">
-        <div className="panel-header">对话</div>
-        <div className="chat-messages">
+        <div className="panel-header">{t('chat.panel.title')}</div>
+        <div className="chat-messages" aria-live="polite">
           {chat.chatMessages.length === 0 ? (
             <div className="welcome-screen">
               <div className="welcome-kicker">Antigravity Go</div>
-              <h2>控制面已就绪</h2>
-              <p>从任务、文件或自测入口开始，右侧对话区会统一承接控制流。</p>
+              <div className="welcome-screen__scoreboard">
+                <ScoreboardPanel error={scoreboardError} summary={scoreboardSummary} />
+              </div>
+              <h2>{t('chat.hero.title')}</h2>
+              <p>{t('chat.hero.subtitle')}</p>
               <div className="suggestion-chips">
-                <button type="button" onClick={() => chat.setInput('请先用 get_project_summary 总结项目结构，并给出关键模块说明。')}>项目地图</button>
-                <button type="button" onClick={() => chat.setInput('请审查 internal/agent 包，找出潜在 bug、边界条件和并发风险。')}>风险审查</button>
-                <button type="button" onClick={() => chat.setInput('请基于 cmd/agy/main.go 解释系统整体架构与关键数据流。')}>架构说明</button>
-                <button type="button" onClick={() => visualSelfTestSample ? chat.setInput(visualSelfTestSample.task) : onOpenVisualSelfTest()}>视觉自测</button>
+                <button type="button" onClick={() => chat.setInput(t('chat.prompt.project_map'))}>{t('chat.hero.project_map')}</button>
+                <button type="button" onClick={() => chat.setInput(t('chat.prompt.risk_review'))}>{t('chat.hero.risk_review')}</button>
+                <button type="button" onClick={() => chat.setInput(t('chat.prompt.architecture'))}>{t('chat.hero.architecture')}</button>
+                <button type="button" onClick={() => visualSelfTestSample ? chat.setInput(visualSelfTestSample.task) : onOpenVisualSelfTest()}>{t('chat.hero.visual_test')}</button>
               </div>
             </div>
           ) : (
             chat.chatMessages.map((message, index) => {
               if (message.role === 'tool') {
-                const display = toolDisplay(message.toolData);
+                const display = toolDisplay(t, message.toolData);
                 return (
                   <div key={`${message.role}-${index}`} className="chat-message tool">
                     <div className={`tool-card ${message.toolData?.status || 'completed'}`}>
@@ -368,7 +401,7 @@ export function ChatWorkspace({
                       {message.toolData?.status !== 'running' && message.toolData?.result && (
                         <div className="tool-result">
                           <details>
-                            <summary>查看结果</summary>
+                            <summary>{t('chat.details.result')}</summary>
                             <pre>{message.toolData.result}</pre>
                           </details>
                         </div>
@@ -385,8 +418,8 @@ export function ChatWorkspace({
                     {message.content}
                     {message.role === 'assistant' && !chat.streamingResponse && (
                       <div className="message-actions">
-                        <button type="button" onClick={() => chat.sendFeedback(index, 'positive')}>有帮助</button>
-                        <button type="button" onClick={() => chat.sendFeedback(index, 'negative')}>需改进</button>
+                        <button type="button" onClick={() => chat.sendFeedback(index, 'positive')}>{t('chat.feedback.helpful')}</button>
+                        <button type="button" onClick={() => chat.sendFeedback(index, 'negative')}>{t('chat.feedback.improve')}</button>
                       </div>
                     )}
                   </div>
@@ -408,25 +441,31 @@ export function ChatWorkspace({
           <textarea
             className="chat-input"
             disabled={chat.isThinking}
+            id="chat-input"
+            name="chat-input"
             onChange={(event) => chat.setInput(event.target.value)}
             onKeyDown={chat.handleKeyDown}
-            placeholder="输入任务或问题。Enter 发送，Shift+Enter 换行。"
+            placeholder={t('chat.input.placeholder')}
             value={chat.input}
+            aria-label={t('chat.input.placeholder')}
+            aria-busy={chat.isThinking}
           />
           <button
-            className="send-button"
+            className={`send-button${chat.isThinking ? ' is-busy' : ''}`}
             disabled={chat.isThinking || !chat.input.trim() || chat.approvalReq !== null}
             onClick={chat.handleSendMessage}
             type="button"
+            aria-busy={chat.isThinking}
           >
-            发送
+            <span>{chat.isThinking ? t('chat.button.thinking') : t('chat.button.send')}</span>
           </button>
         </div>
       </div>
 
       <div className="card glass-panel logs-panel">
-        <div className="panel-header">日志</div>
-        <div className="logs-container">
+        <div className="panel-header">{t('chat.panel.logs')}</div>
+        <div className="logs-container" aria-live="polite">
+          {chat.logs.length === 0 && <div className="log-line log-line-empty">{t('chat.logs.empty')}</div>}
           {chat.logs.map((line, index) => (
             <div key={`${line}-${index}`} className="log-line">{line}</div>
           ))}

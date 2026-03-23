@@ -1,10 +1,12 @@
+import { useEffect, useState } from 'react';
 import { ApprovalModal } from './components/ApprovalModal';
 import { CodeViewer } from './components/CodeViewer';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { FileTree } from './components/FileTree';
 import { McpPanel } from './components/McpPanel';
 import { MemoryModal } from './components/MemoryModal';
-import { ScoreboardPanel } from './components/ScoreboardPanel';
 import { TerminalPanel } from './components/TerminalPanel';
+import { ToastCenter } from './components/ToastCenter';
 import { TrajectoryModal } from './components/TrajectoryModal';
 import { VisualSelfTestModal } from './components/VisualSelfTestModal';
 import { AppDomainProvider, useAppDomain } from './domains/AppDomainContext';
@@ -13,92 +15,196 @@ import { useObservabilityDomain } from './domains/ObservabilityDomain';
 import { SettingsModal, useSettingsDomain } from './domains/SettingsDomain';
 import './index.css';
 
+function truncatePath(path: string | null) {
+  if (!path) {
+    return '';
+  }
+  if (path.length <= 56) {
+    return path;
+  }
+  return `...${path.slice(-53)}`;
+}
+
 function LayoutShell() {
   const app = useAppDomain();
   const chat = useChatDomain();
   const observability = useObservabilityDomain();
   const settings = useSettingsDomain();
+  const { t } = app;
+  const [showDataPlane, setShowDataPlane] = useState(false);
+  const currentFileLabel = truncatePath(app.currentFile);
+  const dataPlaneAnchored = Boolean(app.currentFile?.trim());
+  const statusLabel = chat.status && chat.connected ? t('app.status.online') : t('app.status.reconnecting');
+
+  useEffect(() => {
+    if (!showDataPlane) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowDataPlane(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showDataPlane]);
 
   return (
-    <div className="container">
-      <header className="glass-header" data-testid="dashboard-header">
-        <div className="logo">
+    <div className="container commander-shell">
+      <header className="command-hud" data-testid="dashboard-header">
+        <div className="command-hud__brand">
           <span className="logo-mark">AG</span>
-          <div>
-            <h1>Antigravity <span className="highlight">控制台</span></h1>
-            <p className="logo-subtitle">Phase 6B Domain Shell</p>
+          <div className="command-hud__brand-copy">
+            <h1>Antigravity <span className="highlight">{t('app.title.suffix')}</span></h1>
+            <p className="logo-subtitle">{t('app.header.subtitle')}</p>
+          </div>
+          <div className="command-hud__status-cluster" aria-label={t('app.control_plane.title')}>
+            <span className={`command-hud__status-pill${chat.status && chat.connected ? ' is-online' : ' is-offline'}`}>
+              <span aria-hidden="true" className="command-hud__status-dot" />
+              <span>{statusLabel}</span>
+            </span>
+            <span
+              className={`command-hud__status-pill${dataPlaneAnchored ? ' is-anchored' : ''}`}
+              title={app.currentFile ?? undefined}
+            >
+              <span
+                aria-hidden="true"
+                className={`data-plane-indicator${dataPlaneAnchored ? ' is-anchored' : ''}`}
+              />
+              <span>{dataPlaneAnchored ? 'Anchored' : 'Standby'}</span>
+            </span>
+            {chat.indexStatus && !chat.indexStatus.includes('complete') && (
+              <span className="command-hud__status-pill is-processing">{t('app.status.indexing')}</span>
+            )}
           </div>
         </div>
 
-        <div className="status-bar">
-          <ScoreboardPanel error={observability.taskSummaryError} summary={observability.taskSummary} />
+        <div className="command-hud__actions">
+          <button
+            className="btn-primary command-button command-button--primary"
+            data-testid="toggle-data-plane"
+            onClick={() => setShowDataPlane(true)}
+            type="button"
+          >
+            {t('app.action.open_data_plane')}
+          </button>
+          <button
+            className="btn-secondary command-button"
+            onClick={() => {
+              setShowDataPlane(true);
+              app.setShowTerminal(!app.showTerminal);
+            }}
+            type="button"
+          >
+            {app.showTerminal ? t('app.action.hide_terminal_drawer') : t('app.action.show_terminal_drawer')}
+          </button>
           <button className="badge badge-btn" data-testid="open-trajectory" onClick={() => void observability.handleOpenTrajectoryModal()} type="button">
-            轨迹树 {observability.observabilitySummary ? `(${observability.observabilitySummary.trajectories.count})` : ''}
+            {t('app.action.trajectory')} {observability.observabilitySummary ? `(${observability.observabilitySummary.trajectories.count})` : ''}
           </button>
           <button className="badge badge-btn" data-testid="open-memory" onClick={() => void observability.handleOpenMemoryModal()} type="button">
-            系统记忆 {observability.observabilitySummary ? `(${observability.observabilitySummary.memories.count})` : ''}
+            {t('app.action.memory')} {observability.observabilitySummary ? `(${observability.observabilitySummary.memories.count})` : ''}
           </button>
           <button className="badge badge-btn" onClick={() => observability.setShowMcpPanel(true)} type="button">MCP</button>
-          <button className="badge badge-btn" data-testid="open-visual-self-test" onClick={() => void observability.handleOpenVisualSelfTestModal()} type="button">视觉自测</button>
-          <button className="badge badge-btn" onClick={() => settings.setShowSettings(true)} type="button">设置</button>
-
-          {observability.latestObservabilityEvent && (
-            <span className="badge info" title={observability.latestObservabilityEvent.timestamp}>
-              {observability.latestObservabilityEvent.message}
-            </span>
-          )}
-          {observability.observabilityError && <span className="badge error">{observability.observabilityError}</span>}
-          {chat.indexStatus && !chat.indexStatus.includes('complete') && <span className="badge processing">索引中</span>}
-          {chat.indexStatus && chat.indexStatus.includes('complete') && <span className="badge success-dim" title={chat.indexStatus}>已索引</span>}
-          {chat.status && chat.connected ? (
-            <>
-              <span className="badge success">系统在线</span>
-              <span className="badge info">端口 {chat.status.core_port}</span>
-              <span className="badge warning">Tokens {chat.status.token_usage}</span>
-            </>
-          ) : (
-            <span className="badge error">重连中</span>
-          )}
+          <button className="badge badge-btn" data-testid="open-visual-self-test" onClick={() => void observability.handleOpenVisualSelfTestModal()} type="button">{t('app.action.visual_self_test')}</button>
+          <button className="badge badge-btn" onClick={() => settings.setShowSettings(true)} type="button">{t('app.action.settings')}</button>
         </div>
       </header>
 
-      <main className="ide-layout">
-        <aside className="sidebar glass-panel">
-          <FileTree onSelectFile={app.setCurrentFile} />
-        </aside>
-
-        <section className="editor-container">
-          <div className="editor-area glass-panel" style={{ flex: app.showTerminal ? '1 1 60%' : '1 1 100%' }}>
-            <CodeViewer
-              currentFile={app.currentFile}
-              lastModified={app.fileRefreshTrigger}
-              onCodeAction={chat.handleCodeAction}
-            />
+      <main className="commander-layout">
+        <section className="control-plane">
+          <div className="control-plane__intro">
+            <div className="control-plane__heading">
+              <span className="control-plane__kicker">{t('app.commander.kicker')}</span>
+              <h2>{t('app.commander.title')}</h2>
+              <p>{t('app.commander.subtitle')}</p>
+            </div>
+            <div className="control-plane__actions">
+              <button className="btn-primary command-button" onClick={() => setShowDataPlane(true)} type="button">
+                {t('app.action.open_data_plane')}
+              </button>
+              <button className="btn-secondary command-button" onClick={() => void observability.handleOpenTrajectoryModal()} type="button">
+                {t('app.action.trajectory')}
+              </button>
+            </div>
           </div>
 
-          {app.showTerminal ? (
-            <div className="terminal-area glass-panel">
-              <div className="panel-header terminal-header">
-                <span>终端</span>
-                <button onClick={() => app.setShowTerminal(false)} type="button">关闭</button>
-              </div>
-              <TerminalPanel />
-            </div>
-          ) : (
-            <button className="terminal-toggle" onClick={() => app.setShowTerminal(true)} type="button">
-              打开终端
-            </button>
-          )}
+          <div className="control-plane__workspace">
+            <ChatWorkspace
+              chat={chat}
+              onOpenVisualSelfTest={() => void observability.handleOpenVisualSelfTestModal()}
+              scoreboardError={observability.taskSummaryError}
+              scoreboardSummary={observability.taskSummary}
+              visualSelfTestSample={observability.visualSelfTestSample}
+            />
+          </div>
         </section>
-
-        <aside className="right-panel">
-          <ChatWorkspace
-            chat={chat}
-            onOpenVisualSelfTest={() => void observability.handleOpenVisualSelfTestModal()}
-            visualSelfTestSample={observability.visualSelfTestSample}
-          />
-        </aside>
       </main>
+
+      <div
+        aria-hidden={!showDataPlane}
+        className={`data-plane-overlay${showDataPlane ? ' is-open' : ''}`}
+        onClick={() => setShowDataPlane(false)}
+      >
+        <aside
+          aria-label={t('app.data_plane.title')}
+          aria-modal="true"
+          className={`data-plane-drawer${showDataPlane ? ' is-open' : ''}`}
+          onClick={(event) => event.stopPropagation()}
+          role="dialog"
+        >
+          <div className="data-plane-drawer__header">
+            <div className="data-plane-drawer__heading">
+              <span className="data-plane-drawer__eyebrow">{t('app.data_plane.title')}</span>
+              <h3>{t('app.data_plane.subtitle')}</h3>
+              <p title={app.currentFile ?? undefined}>
+                {app.currentFile ? t('app.data_plane.file', currentFileLabel) : t('app.data_plane.empty')}
+              </p>
+            </div>
+            <div className="data-plane-drawer__actions">
+              <button
+                className="btn-secondary command-button"
+                onClick={() => app.setShowTerminal(!app.showTerminal)}
+                type="button"
+              >
+                {app.showTerminal ? t('app.action.hide_terminal_drawer') : t('app.action.show_terminal_drawer')}
+              </button>
+              <button className="btn-secondary command-button" onClick={() => setShowDataPlane(false)} type="button">
+                {t('app.action.close_data_plane')}
+              </button>
+            </div>
+          </div>
+
+          <div className="data-plane-drawer__body">
+            <aside className="data-plane-drawer__explorer glass-panel">
+              <FileTree onSelectFile={app.setCurrentFile} />
+            </aside>
+
+            <section className="data-plane-drawer__workspace">
+              <div className="data-plane-drawer__editor glass-panel">
+                <CodeViewer
+                  currentFile={app.currentFile}
+                  lastModified={app.fileRefreshTrigger}
+                  onCodeAction={chat.handleCodeAction}
+                />
+              </div>
+
+              {app.showTerminal && (
+                <div className="data-plane-drawer__terminal glass-panel">
+                  <div className="panel-header terminal-header">
+                    <span>{t('app.panel.terminal')}</span>
+                    <button onClick={() => app.setShowTerminal(false)} type="button">{t('app.action.close')}</button>
+                  </div>
+                  <TerminalPanel />
+                </div>
+              )}
+            </section>
+          </div>
+        </aside>
+      </div>
 
       {chat.approvalReq && <ApprovalModal onDecision={chat.handleApprovalDecision} request={chat.approvalReq} />}
 
@@ -152,6 +258,8 @@ function LayoutShell() {
           sample={observability.visualSelfTestSample}
         />
       )}
+
+      <ToastCenter />
     </div>
   );
 }
@@ -163,7 +271,9 @@ export default function App() {
 
   return (
     <AppDomainProvider initialResumeTrajectoryId={initialResumeTrajectoryId} token={token}>
-      <LayoutShell />
+      <ErrorBoundary>
+        <LayoutShell />
+      </ErrorBoundary>
     </AppDomainProvider>
   );
 }

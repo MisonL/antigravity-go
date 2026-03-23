@@ -4,28 +4,37 @@
     --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", "SFMono-Regular", monospace;
 
-    --color-bg: #f4f7fb;
-    --color-bg-accent: #e3eefc;
-    --color-surface: rgba(255, 255, 255, 0.84);
-    --color-surface-strong: rgba(255, 255, 255, 0.96);
-    --color-surface-muted: rgba(255, 255, 255, 0.68);
-    --color-border: rgba(15, 23, 42, 0.1);
-    --color-border-strong: rgba(15, 23, 42, 0.18);
+    --color-bg: #edf2f7;
+    --color-bg-accent: #e2e8f0;
+    --color-surface: rgba(248, 250, 252, 0.72);
+    --color-surface-strong: rgba(248, 250, 252, 0.92);
+    --color-surface-muted: rgba(248, 250, 252, 0.56);
+    --color-surface-glass: rgba(248, 250, 252, 0.64);
+    --color-surface-elevated: rgba(248, 250, 252, 0.98);
+    --color-border: rgba(15, 23, 42, 0.12);
+    --color-border-strong: rgba(15, 23, 42, 0.2);
+    --color-border-gloss: rgba(255, 255, 255, 0.7);
     --color-text: #0f172a;
     --color-text-muted: rgba(15, 23, 42, 0.64);
     --color-primary: #0f6cbd;
     --color-primary-soft: rgba(15, 108, 189, 0.12);
+    --color-primary-strong: #0b5aa2;
     --color-secondary: #1d4ed8;
     --color-success: #15803d;
     --color-warning: #b45309;
     --color-danger: #b91c1c;
+    --color-skeleton: rgba(148, 163, 184, 0.14);
+    --color-skeleton-shine: rgba(255, 255, 255, 0.72);
 
-    --shadow-soft: 0 20px 48px rgba(15, 23, 42, 0.08);
-    --shadow-focus: 0 0 0 3px rgba(15, 108, 189, 0.16);
+    --shadow-soft: 0 0 0 0 transparent;
+    --shadow-medium: 0 0 0 0 transparent;
+    --shadow-strong: 0 0 0 0 transparent;
+    --shadow-focus: 0 0 0 2px rgba(15, 108, 189, 0.16);
+    --shadow-inset-highlight: 0 0 0 0 transparent;
 
-    --radius-sm: 10px;
-    --radius-md: 16px;
-    --radius-lg: 24px;
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
 
     --space-1: 0.25rem;
     --space-2: 0.5rem;
@@ -34,6 +43,12 @@
     --space-5: 1.25rem;
     --space-6: 1.5rem;
     --space-8: 2rem;
+
+    --duration-fast: 140ms;
+    --duration-normal: 220ms;
+    --duration-slow: 320ms;
+    --ease-standard: cubic-bezier(0.2, 0.7, 0.2, 1);
+    --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   html,
@@ -47,9 +62,7 @@
     overflow: hidden;
     font-family: var(--font-sans);
     color: var(--color-text);
-    background:
-      radial-gradient(circle at top left, rgba(255, 255, 255, 0.96), transparent 28%),
-      linear-gradient(135deg, var(--color-bg) 0%, var(--color-bg-accent) 100%);
+    background: var(--color-bg);
   }
 
   * {
