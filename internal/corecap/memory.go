@@ -1,0 +1,32 @@
+package corecap
+
+import (
+	"fmt"
+
+	"github.com/mison/antigravity-go/internal/rpc"
+)
+
+// MemoryManager provides a stable wrapper around Core's memory-related RPCs.
+type MemoryManager struct {
+	client *rpc.Client
+}
+
+func NewMemoryManager(client *rpc.Client) *MemoryManager {
+	return &MemoryManager{client: client}
+}
+
+// Save writes a memory payload using Core's UpdateCascadeMemory RPC.
+func (m *MemoryManager) Save(req map[string]interface{}) (map[string]interface{}, error) {
+	if m == nil || m.client == nil {
+		return nil, fmt.Errorf("memory manager is not initialized")
+	}
+	return m.client.UpdateCascadeMemory(req)
+}
+
+// Query loads memories using Core's GetUserMemories RPC.
+func (m *MemoryManager) Query(req map[string]interface{}) (map[string]interface{}, error) {
+	if m == nil || m.client == nil {
+		return nil, fmt.Errorf("memory manager is not initialized")
+	}
+	return m.client.GetUserMemories(req)
+}

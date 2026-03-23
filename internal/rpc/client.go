@@ -97,15 +97,6 @@ func (c *Client) GetAllRules() (map[string]interface{}, error) {
 	return resp, nil
 }
 
-// GetAllCascadeTrajectories retrieves all cascade trajectories.
-func (c *Client) GetAllCascadeTrajectories() (map[string]interface{}, error) {
-	var resp map[string]interface{}
-	if err := c.call("GetAllCascadeTrajectories", map[string]interface{}{}, &resp); err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
 // RecordEvent records an event.
 func (c *Client) RecordEvent(event map[string]interface{}) error {
 	return c.call("RecordEvent", event, nil)
@@ -210,18 +201,6 @@ func (c *Client) Heartbeat() error {
 	return c.call("Heartbeat", map[string]interface{}{}, nil)
 }
 
-// CaptureScreenshot captures a screenshot of the specified browser page managed by Core.
-func (c *Client) CaptureScreenshot(pageID string) (map[string]interface{}, error) {
-	req := map[string]interface{}{
-		"page_id": pageID,
-	}
-	var resp map[string]interface{}
-	if err := c.call("CaptureScreenshot", req, &resp); err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
 // RunCommand executes a command via Core's controlled environment.
 func (c *Client) RunCommand(command string, args []string, cwd string) (map[string]interface{}, error) {
 	req := map[string]interface{}{
@@ -240,6 +219,19 @@ func (c *Client) RunCommand(command string, args []string, cwd string) (map[stri
 func (c *Client) GetRepoInfos() (map[string]interface{}, error) {
 	var resp map[string]interface{}
 	if err := c.call("GetRepoInfos", map[string]interface{}{}, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// AddTrackedWorkspace registers a workspace root for kernel-managed tracking.
+func (c *Client) AddTrackedWorkspace(root string) (map[string]interface{}, error) {
+	req := map[string]interface{}{
+		"root": root,
+	}
+
+	var resp map[string]interface{}
+	if err := c.call("AddTrackedWorkspace", req, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

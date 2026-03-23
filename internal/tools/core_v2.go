@@ -5,17 +5,32 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/mison/antigravity-go/internal/corecap"
 	"github.com/mison/antigravity-go/internal/llm"
 	"github.com/mison/antigravity-go/internal/rpc"
 )
 
 // CoreV2Manager wraps the rpc.Client to provide high-level tools.
 type CoreV2Manager struct {
-	client *rpc.Client
+	client     *rpc.Client
+	actuator   *corecap.ActuatorManager
+	browser    *corecap.BrowserManager
+	memory     *corecap.MemoryManager
+	trajectory *corecap.TrajectoryManager
+	versioning *corecap.VersioningManager
+	workspace  *corecap.WorkspaceManager
 }
 
 func NewCoreV2Manager(client *rpc.Client) *CoreV2Manager {
-	return &CoreV2Manager{client: client}
+	return &CoreV2Manager{
+		client:     client,
+		actuator:   corecap.NewActuatorManager(client),
+		browser:    corecap.NewBrowserManager(client),
+		memory:     corecap.NewMemoryManager(client),
+		trajectory: corecap.NewTrajectoryManager(client),
+		versioning: corecap.NewVersioningManager(client),
+		workspace:  corecap.NewWorkspaceManager(client),
+	}
 }
 
 // GetMcpStatesTool returns a tool that lists MCP servers managed by Core.
@@ -66,40 +81,6 @@ func (m *CoreV2Manager) GetCoreDiagnosticsTool() Tool {
 				return "", err
 			}
 			data, _ := json.MarshalIndent(res, "", "  ")
-			return string(data), nil
-		},
-	}
-}
-
-// CaptureScreenshotTool captures a browser screenshot via Core.
-func (m *CoreV2Manager) CaptureScreenshotTool() Tool {
-	return Tool{
-		Definition: llm.ToolDefinition{
-			Name:        "browser_screenshot",
-			Description: "Capture a screenshot of a browser page managed by Antigravity Core. Helpful for debugging frontend UIs.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"page_id": map[string]interface{}{
-						"type":        "string",
-						"description": "The ID of the browser page to capture. Use get_core_mcp_states to find active browser states if available.",
-					},
-				},
-				"required": []string{"page_id"},
-			},
-		},
-		Execute: func(ctx context.Context, args json.RawMessage) (string, error) {
-			var params struct {
-				PageID string `json:"page_id"`
-			}
-			if err := json.Unmarshal(args, &params); err != nil {
-				return "", err
-			}
-			res, err := m.client.CaptureScreenshot(params.PageID)
-			if err != nil {
-				return "", err
-			}
-			data, _ := json.Marshal(res)
 			return string(data), nil
 		},
 	}
