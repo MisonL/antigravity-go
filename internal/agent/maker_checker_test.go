@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mison/antigravity-go/internal/llm"
+	"github.com/mison/antigravity-go/internal/pkg/i18n"
 	"github.com/mison/antigravity-go/internal/tools"
 )
 
@@ -27,15 +28,16 @@ func TestApplyCoreEditRunsReviewBeforeHumanApproval(t *testing.T) {
 	}
 
 	var seq []string
-	agt := NewAgent(provider, func(req PermissionRequest) bool {
+	var agt *Agent
+	agt = NewAgent(provider, func(req PermissionRequest) PermissionDecision {
 		seq = append(seq, "approval")
-		if req.Summary != "机器预审通过，等待人工最终确认。" {
+		if req.Summary != i18n.MustLocalizer(agt.Locale()).T("agent.permission.final_confirmation") {
 			t.Fatalf("unexpected approval summary: %q", req.Summary)
 		}
 		if !strings.Contains(req.Preview, autoReviewHeader) {
 			t.Fatalf("expected auto-review preview, got %q", req.Preview)
 		}
-		return true
+		return PermissionDecision{Allow: true}
 	}, 4096)
 
 	registerTestTool(agt, trajectoryListName, func(ctx context.Context, args json.RawMessage) (string, error) {
@@ -82,9 +84,9 @@ func TestApplyCoreEditFailureRollsBackToPreviousStep(t *testing.T) {
 		},
 	}
 
-	agt := NewAgent(provider, func(req PermissionRequest) bool {
+	agt := NewAgent(provider, func(req PermissionRequest) PermissionDecision {
 		t.Fatal("permission should not be requested when auto review fails")
-		return false
+		return PermissionDecision{Allow: false}
 	}, 4096)
 
 	registerTestTool(agt, trajectoryListName, func(ctx context.Context, args json.RawMessage) (string, error) {
@@ -145,9 +147,9 @@ func TestWriteFileFailureRestoresSnapshot(t *testing.T) {
 		},
 	}
 
-	agt := NewAgent(provider, func(req PermissionRequest) bool {
+	agt := NewAgent(provider, func(req PermissionRequest) PermissionDecision {
 		t.Fatal("permission should not be requested when auto review fails")
-		return false
+		return PermissionDecision{Allow: false}
 	}, 4096)
 
 	registerTestTool(agt, writeFileToolName, func(ctx context.Context, args json.RawMessage) (string, error) {

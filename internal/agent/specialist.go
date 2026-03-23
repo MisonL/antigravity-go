@@ -7,12 +7,9 @@ import (
 	"strings"
 
 	"github.com/mison/antigravity-go/internal/llm"
+	"github.com/mison/antigravity-go/internal/pkg/i18n"
 	"github.com/mison/antigravity-go/internal/tools"
 )
-
-type specialistProfile struct {
-	Prompt string
-}
 
 type ReviewerAssessmentInput struct {
 	ToolName         string
@@ -24,27 +21,6 @@ type ReviewerAssessmentInput struct {
 	Passed           bool
 }
 
-var specialistProfiles = map[string]specialistProfile{
-	"reviewer": {
-		Prompt: `你是内部 ReviewerAgent，负责在代码进入人工审批前做严格预审。
-优先关注：
-1. 编译、测试、校验是否失败。
-2. 改动是否引入明显逻辑缺陷或边界问题。
-3. 如果失败，输出明确的失败原因，便于 Coder 立即重试。
-4. 如果通过，也要给出一句简短结论。
-
-输出要求：
-- 先给结论：PASS 或 FAIL。
-- 然后给最多 3 条关键发现。
-- 不要要求人工介入，不要输出空泛建议。`,
-	},
-	"architect": {
-		Prompt: `你是资深架构师。请从架构一致性、可维护性、扩展性和集成风险角度评估给定方案，并给出高层反馈。`,
-	},
-	"security": {
-		Prompt: `你是安全审计专家。请重点检查输入校验、权限边界、敏感信息泄漏和常见漏洞风险，并给出明确风险判断。`,
-	},
-}
 
 func (a *Agent) GetSpecialistTool() tools.Tool {
 	return tools.Tool{
@@ -92,38 +68,39 @@ func (a *Agent) GetSpecialistTool() tools.Tool {
 }
 
 func (a *Agent) RunReviewerAssessment(ctx context.Context, input ReviewerAssessmentInput) string {
+	localizer := i18n.MustLocalizer(a.Locale())
 	status := "PASS"
 	if !input.Passed {
 		status = "FAIL"
 	}
 
 	task := strings.Join([]string{
-		"请基于以下自动化审计证据给出最终预审结论。",
-		"结论基线: " + status,
-		"工具: " + input.ToolName,
-		"工具参数:",
+		localizer.T("agent.reviewer.task.header"),
+		localizer.T("agent.reviewer.task.status", status),
+		localizer.T("agent.reviewer.task.tool", input.ToolName),
+		localizer.T("agent.reviewer.task.tool_args"),
 		truncateSpecialistText(input.ToolArgs, 2000),
-		"工具结果:",
+		localizer.T("agent.reviewer.task.tool_result"),
 		truncateSpecialistText(input.ToolResult, 3000),
-		"校验结果:",
+		localizer.T("agent.reviewer.task.validation"),
 		truncateSpecialistText(input.ValidationResult, 3000),
-		"测试命令: " + input.TestCommand,
-		"测试输出:",
+		localizer.T("agent.reviewer.task.test_command", input.TestCommand),
+		localizer.T("agent.reviewer.task.test_output"),
 		truncateSpecialistText(input.TestOutput, 3000),
 	}, "\n")
 
 	result, err := a.runSpecialist(ctx, "reviewer", task, "")
 	if err != nil {
 		if input.Passed {
-			return "PASS\n- 自动预审通过，未能生成额外 Reviewer 摘要。"
+			return localizer.T("agent.reviewer.default_pass")
 		}
-		return "FAIL\n- 自动预审失败，未能生成额外 Reviewer 摘要。"
+		return localizer.T("agent.reviewer.default_fail")
 	}
 	return result
 }
 
 func (a *Agent) runSpecialist(ctx context.Context, role string, task string, extraContext string) (string, error) {
-	profile, exists := specialistProfiles[role]
+	prompt, exists := SpecialistPrompt(a.Locale(), role)
 	if !exists {
 		return "", fmt.Errorf("unknown specialist role %q", role)
 	}
@@ -132,9 +109,8 @@ func (a *Agent) runSpecialist(ctx context.Context, role string, task string, ext
 		return "", err
 	}
 
-	prompt := profile.Prompt
 	if extraContext != "" {
-		prompt += "\n\n补充上下文:\n" + extraContext
+		prompt += "\n\nAdditional context:\n" + extraContext
 	}
 
 	resp, err := a.provider.Chat(ctx, []llm.Message{

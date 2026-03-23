@@ -50,6 +50,7 @@ func NewRunCommandTool() Tool {
 			defer cancel()
 
 			cmd := exec.CommandContext(timeoutCtx, "/bin/bash", "-c", params.Command)
+			cmd.Dir = WorkspaceRootFromContext(ctx, ".")
 
 			var outputBuf bytes.Buffer
 			var writers []io.Writer

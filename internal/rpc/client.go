@@ -42,33 +42,33 @@ func (c *Client) call(method string, req, resp interface{}) error {
 
 	reqBody, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("%s: marshal request: %w", method, err)
 	}
 
 	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return fmt.Errorf("%s: create request: %w", method, err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("do request: %w", err)
+		return fmt.Errorf("%s: do request: %w", method, err)
 	}
 	defer httpResp.Body.Close()
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return fmt.Errorf("read response: %w", err)
+		return fmt.Errorf("%s: read response: %w", method, err)
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status %d: %s", httpResp.StatusCode, string(body))
+		return fmt.Errorf("%s: status %d: %s", method, httpResp.StatusCode, string(body))
 	}
 
 	if resp != nil {
 		if err := json.Unmarshal(body, resp); err != nil {
-			return fmt.Errorf("unmarshal response: %w", err)
+			return fmt.Errorf("%s: unmarshal response: %w", method, err)
 		}
 	}
 

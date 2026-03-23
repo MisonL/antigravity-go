@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mison/antigravity-go/internal/agent"
 	"github.com/mison/antigravity-go/internal/corecap"
+	"github.com/mison/antigravity-go/internal/pkg/i18n"
 	"github.com/mison/antigravity-go/internal/rpc"
 	"github.com/mison/antigravity-go/internal/session"
 	"github.com/mison/antigravity-go/internal/tools"
@@ -30,9 +30,10 @@ type webSession struct {
 	agent         *agent.Agent
 	rec           *session.Recorder
 	workspaceRoot string
+	locale        string
 
 	pendingMu sync.Mutex
-	pending   map[string]chan approvalDecision
+	pending   map[string]*pendingApproval
 }
 
 type WSServer struct {
@@ -47,6 +48,7 @@ type WSServer struct {
 	workspaceRoot    string
 	defaultApprovals string
 	sessionsRoot     string
+	defaultLocale    string
 	sessions         map[*websocket.Conn]*webSession
 	protocol         *wsProtocolHandler
 }
@@ -61,6 +63,7 @@ func NewWSServer(baseAgent *agent.Agent, client *rpc.Client, tm *TerminalManager
 		workspaceRoot:    workspaceRoot,
 		defaultApprovals: approvals,
 		sessionsRoot:     sessionsRoot,
+		defaultLocale:    i18n.DetectLocale(),
 		sessions:         make(map[*websocket.Conn]*webSession),
 	}
 	ws.protocol = newWSProtocolHandler(ws)
@@ -81,7 +84,7 @@ func (ws *WSServer) ReplaceToolsByPrefix(prefix string, replacements []tools.Too
 	}
 }
 
-func (ws *WSServer) BroadcastObservabilityEvent(toolName string, status string, extra map[string]interface{}) {
+func (ws *WSServer) BroadcastObservabilityEvent(locale string, toolName string, status string, extra map[string]interface{}) {
 	plane := classifyObservabilityPlane(toolName)
 	if plane == "" {
 		return
@@ -91,7 +94,7 @@ func (ws *WSServer) BroadcastObservabilityEvent(toolName string, status string, 
 		"plane":     plane,
 		"tool":      toolName,
 		"status":    status,
-		"message":   buildObservabilityMessage(plane, toolName, status),
+		"message":   buildObservabilityMessage(locale, plane, toolName, status),
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 	for key, value := range extra {
@@ -106,6 +109,10 @@ func (ws *WSServer) BroadcastObservabilityEvent(toolName string, status string, 
 
 func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 	resumeTrajectoryID := strings.TrimSpace(r.URL.Query().Get("resume_trajectory"))
+	locale := i18n.NormalizeLocale(r.URL.Query().Get("locale"))
+	if locale == "" {
+		locale = ws.defaultLocale
+	}
 	var snapshot *session.TrajectorySnapshot
 	if resumeTrajectoryID != "" {
 		var err error
@@ -130,7 +137,7 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 	var sess *webSession
 	if ws.baseAgent != nil {
 		var err error
-		sess, err = ws.newSession(snapshot)
+		sess, err = ws.newSession(snapshot, locale)
 		if err != nil {
 			ws.sendJSON(conn, map[string]interface{}{
 				"type":  "chat_error",
@@ -152,7 +159,7 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 	// Initial generic push
 	ws.sendJSON(conn, map[string]interface{}{
 		"type":    "info",
-		"message": "已连接到 Antigravity 后端",
+		"message": i18n.MustLocalizer(locale).T("server.ws.connected"),
 	})
 	if resumeTrajectoryID != "" && snapshot != nil {
 		ws.sendJSON(conn, map[string]interface{}{
@@ -196,6 +203,8 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 			switch msg.Type {
 			case "chat":
 				ws.handleChat(conn, msg.Payload)
+			case "set_locale":
+				ws.handleSetLocale(conn, msg.Payload)
 			case "feedback":
 				if ws.client == nil {
 					continue
@@ -249,7 +258,7 @@ func (ws *WSServer) handleChat(conn *websocket.Conn, input string) {
 	if sess == nil || sess.agent == nil {
 		ws.sendJSON(conn, map[string]interface{}{
 			"type":  "chat_error",
-			"error": "Agent 未初始化（可能缺少 API Key？）",
+			"error": i18n.MustLocalizer(ws.localeForConn(conn)).T("server.ws.agent_not_initialized"),
 		})
 		return
 	}
@@ -299,11 +308,11 @@ func (ws *WSServer) handleChat(conn *websocket.Conn, input string) {
 
 		switch event {
 		case "start":
-			ws.BroadcastObservabilityEvent(name, "running", nil)
+			ws.BroadcastObservabilityEvent(ws.localeForConn(conn), name, "running", nil)
 		case "end":
-			ws.BroadcastObservabilityEvent(name, "completed", nil)
+			ws.BroadcastObservabilityEvent(ws.localeForConn(conn), name, "completed", nil)
 		case "error":
-			ws.BroadcastObservabilityEvent(name, "error", map[string]interface{}{
+			ws.BroadcastObservabilityEvent(ws.localeForConn(conn), name, "error", map[string]interface{}{
 				"error": result,
 			})
 		}
@@ -361,9 +370,10 @@ func (ws *WSServer) getSession(conn *websocket.Conn) *webSession {
 	return ws.sessions[conn]
 }
 
-func (ws *WSServer) newSession(snapshot *session.TrajectorySnapshot) (*webSession, error) {
+func (ws *WSServer) newSession(snapshot *session.TrajectorySnapshot, locale string) (*webSession, error) {
 	agentForConn := ws.baseAgent.CloneWithPrompt(ws.baseAgent.GetSystemPrompt())
 	agentForConn.RegisterTool(agentForConn.GetSpecialistTool())
+	agentForConn.SetLocale(locale)
 
 	workspaceRoot := ws.workspaceRoot
 	if snapshot != nil && strings.TrimSpace(snapshot.WorkspaceRoot) != "" {
@@ -378,6 +388,10 @@ func (ws *WSServer) newSession(snapshot *session.TrajectorySnapshot) (*webSessio
 			return nil, err
 		}
 	}
+	agentForConn.SetWorkspaceContext(agent.WorkspaceContext{
+		Root:  workspaceRoot,
+		Label: "web-session",
+	})
 
 	var rec *session.Recorder
 	if ws.sessionsRoot != "" {
@@ -400,8 +414,39 @@ func (ws *WSServer) newSession(snapshot *session.TrajectorySnapshot) (*webSessio
 		agent:         agentForConn,
 		rec:           rec,
 		workspaceRoot: workspaceRoot,
-		pending:       make(map[string]chan approvalDecision),
+		locale:        agentForConn.Locale(),
+		pending:       make(map[string]*pendingApproval),
 	}, nil
+}
+
+func (ws *WSServer) localeForConn(conn *websocket.Conn) string {
+	if sess := ws.getSession(conn); sess != nil {
+		if locale := i18n.NormalizeLocale(sess.locale); locale != "" {
+			return locale
+		}
+	}
+	return ws.defaultLocale
+}
+
+func (ws *WSServer) handleSetLocale(conn *websocket.Conn, payload string) {
+	var req struct {
+		Locale string `json:"locale"`
+	}
+	if err := json.Unmarshal([]byte(payload), &req); err != nil {
+		return
+	}
+
+	sess := ws.getSession(conn)
+	if sess == nil || sess.agent == nil {
+		return
+	}
+
+	locale := i18n.NormalizeLocale(req.Locale)
+	if locale == "" {
+		locale = ws.defaultLocale
+	}
+	sess.locale = locale
+	sess.agent.SetLocale(locale)
 }
 
 func (ws *WSServer) normalizeWorkspacePathForConn(conn *websocket.Conn, p string) string {
@@ -434,10 +479,14 @@ func (s *webSession) cancelPendingApprovals(reason string) {
 
 	s.pendingMu.Lock()
 	pending := s.pending
-	s.pending = make(map[string]chan approvalDecision)
+	s.pending = make(map[string]*pendingApproval)
 	s.pendingMu.Unlock()
 
-	for _, ch := range pending {
+	for _, pendingReq := range pending {
+		if pendingReq == nil {
+			continue
+		}
+		ch := pendingReq.ch
 		select {
 		case ch <- approvalDecision{Allow: false, Reason: reason}:
 		default:
@@ -474,14 +523,15 @@ func classifyObservabilityPlane(toolName string) string {
 	}
 }
 
-func buildObservabilityMessage(plane string, toolName string, status string) string {
+func buildObservabilityMessage(locale string, plane string, toolName string, status string) string {
+	localizer := i18n.MustLocalizer(locale)
 	switch status {
 	case "running":
-		return fmt.Sprintf("%s plane 正在执行 %s", plane, toolName)
+		return localizer.T("server.observability.running", plane, toolName)
 	case "error":
-		return fmt.Sprintf("%s plane 执行 %s 失败", plane, toolName)
+		return localizer.T("server.observability.error", plane, toolName)
 	default:
-		return fmt.Sprintf("%s plane 已完成 %s", plane, toolName)
+		return localizer.T("server.observability.completed", plane, toolName)
 	}
 }
 

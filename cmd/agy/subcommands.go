@@ -272,12 +272,16 @@ func runResume(args []string) {
 	permReqChan := make(chan tui.PermissionRequest)
 	switch cfg.Approvals {
 	case "full":
-		agt.SetPermissionFunc(func(req agent.PermissionRequest) bool { return true })
+		agt.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+			return agent.PermissionDecision{Allow: true}
+		})
 	case "read-only":
-		agt.SetPermissionFunc(func(req agent.PermissionRequest) bool { return false })
+		agt.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+			return agent.PermissionDecision{Allow: false}
+		})
 	default:
-		agt.SetPermissionFunc(func(req agent.PermissionRequest) bool {
-			resChan := make(chan bool)
+		agt.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+			resChan := make(chan agent.PermissionDecision)
 			permReqChan <- tui.PermissionRequest{
 				ToolName: req.ToolName,
 				Args:     req.Args,
@@ -352,11 +356,17 @@ func buildProvider(cfg *config.Config) (llm.Provider, error) {
 func buildBaseAgent(cfg *config.Config, provider llm.Provider, host *core.Host, rpcClient *rpc.Client, lspMgr *tools.LSPManager, cwd string) *agent.Agent {
 	baseAgt := agent.NewAgent(provider, nil, cfg.MaxContext)
 	baseAgt.SetTaskStore(session.NewTaskManager(filepath.Join(cfg.DataDir, "tasks")))
+	baseAgt.SetWorkspaceContext(agent.WorkspaceContext{
+		Root:  cwd,
+		Label: "primary",
+	})
 	baseAgt.RegisterTool(tools.NewRunCommandTool())
 	baseAgt.RegisterTool(tools.NewReadDirTool())
 	baseAgt.RegisterTool(tools.NewReadFileTool())
 	baseAgt.RegisterTool(tools.NewWriteFileTool())
 	baseAgt.RegisterTool(tools.NewSearchTool(cwd))
+	baseAgt.RegisterTool(tools.NewDeployProjectTool())
+	baseAgt.RegisterTool(baseAgt.GetParallelWorkerTool())
 
 	coreV2 := tools.NewCoreV2Manager(rpcClient)
 	baseAgt.RegisterTool(coreV2.GetMcpStatesTool())
@@ -381,7 +391,7 @@ func buildBaseAgent(cfg *config.Config, provider llm.Provider, host *core.Host, 
 	baseAgt.RegisterTool(coreV2.RollbackToStepTool())
 	baseAgt.RegisterTool(coreV2.WorkspaceTrackTool())
 
-	baseAgt.SetSystemPrompt(agent.DefaultSystemPrompt)
+	baseAgt.SetLocalizedSystemPrompt("default")
 	return baseAgt
 }
 

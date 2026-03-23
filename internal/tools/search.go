@@ -53,7 +53,7 @@ func NewSearchTool(rootPath string) Tool {
 				return "Error: query is empty", nil
 			}
 
-			rootAbs, err := filepath.Abs(rootPath)
+			rootAbs, err := filepath.Abs(WorkspaceRootFromContext(ctx, rootPath))
 			if err != nil {
 				return "", fmt.Errorf("failed to resolve workspace root: %w", err)
 			}

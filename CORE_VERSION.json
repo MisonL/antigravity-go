@@ -3,7 +3,7 @@
     "version": "1.20.6",
     "binary": "./antigravity_core",
     "arch": "x86_64",
-    "last_updated": "2026-03-22"
+    "last_updated": "2026-03-23"
   },
   "tools": {
     "ripgrep": {

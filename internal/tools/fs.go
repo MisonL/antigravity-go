@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/mison/antigravity-go/internal/llm"
-	"github.com/mison/antigravity-go/internal/pkg/pathutil"
 )
 
 func NewReadDirTool() Tool {
@@ -35,7 +34,7 @@ func NewReadDirTool() Tool {
 				return "", err
 			}
 
-			safePath, err := pathutil.SanitizePath(".", params.Path)
+			safePath, err := ResolvePathWithinWorkspace(ctx, ".", params.Path)
 			if err != nil {
 				return "", err
 			}
@@ -83,7 +82,7 @@ func NewReadFileTool() Tool {
 				return "", err
 			}
 
-			safePath, err := pathutil.SanitizePath(".", params.Path)
+			safePath, err := ResolvePathWithinWorkspace(ctx, ".", params.Path)
 			if err != nil {
 				return "", err
 			}
@@ -136,7 +135,7 @@ func NewWriteFileTool() Tool {
 				return "", err
 			}
 
-			safePath, err := pathutil.SanitizePath(".", params.Path)
+			safePath, err := ResolvePathWithinWorkspace(ctx, ".", params.Path)
 			if err != nil {
 				return "", err
 			}

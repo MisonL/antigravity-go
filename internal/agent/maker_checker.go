@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mison/antigravity-go/internal/llm"
+	"github.com/mison/antigravity-go/internal/pkg/i18n"
 	"github.com/mison/antigravity-go/internal/pkg/pathutil"
 	"github.com/mison/antigravity-go/internal/tools"
 )
@@ -42,7 +43,7 @@ type makerCheckerReport struct {
 	TestOutput       string
 }
 
-func requiresPostExecutionApproval(toolName string) bool {
+func requiresChunkApproval(toolName string) bool {
 	switch toolName {
 	case applyCoreEditToolName, writeFileToolName:
 		return true
@@ -141,9 +142,8 @@ func (a *Agent) finalizeSensitiveTool(
 	result string,
 	plan rollbackPlan,
 	callback ToolCallback,
-	permFunc PermissionFunc,
 ) (string, error) {
-	if !requiresPostExecutionApproval(tc.Name) {
+	if !requiresChunkApproval(tc.Name) {
 		return result, nil
 	}
 
@@ -154,42 +154,26 @@ func (a *Agent) finalizeSensitiveTool(
 		return result + "\n\n" + reportBlock + "\n\n" + rollbackMsg, fmt.Errorf("auto review failed")
 	}
 
-	if permFunc != nil && !permFunc(PermissionRequest{
-		ToolName: tc.Name,
-		Args:     tc.Args,
-		Summary:  "机器预审通过，等待人工最终确认。",
-		Preview:  reportBlock,
-		Metadata: map[string]any{
-			"auto_review":  "passed",
-			"test_command": report.TestCommand,
-		},
-	}) {
-		a.mu.Lock()
-		a.hasDeniedTool = true
-		a.mu.Unlock()
-		rollbackMsg := a.rollbackAfterAutoReview(ctx, plan, callback)
-		return result + "\n\n" + reportBlock + "\n\n" + rollbackMsg, fmt.Errorf("user denied permission")
-	}
-
 	return result + "\n\n" + reportBlock, nil
 }
 
 func (a *Agent) rollbackAfterAutoReview(ctx context.Context, plan rollbackPlan, callback ToolCallback) string {
+	localizer := i18n.MustLocalizer(a.Locale())
 	if plan.StepID != "" {
 		raw := fmt.Sprintf(`{"step_id":%q}`, plan.StepID)
 		if res, err := a.executeInternalTool(ctx, rollbackToolName, raw, callback); err == nil {
-			return "已触发 rollback_to_step 恢复工作区。\n" + truncateReviewText(res, 3000)
+			return localizer.T("agent.maker_checker.rollback.step", truncateReviewText(res, 3000))
 		}
 	}
 
 	if plan.Snapshot == nil || strings.TrimSpace(plan.Snapshot.Path) == "" {
-		return "自动回滚失败：缺少可恢复快照。"
+		return localizer.T("agent.maker_checker.rollback.no_snapshot")
 	}
 
 	if err := restoreSnapshot(ctx, plan.Snapshot); err != nil {
-		return "自动回滚失败：" + err.Error()
+		return localizer.T("agent.maker_checker.rollback.error", err.Error())
 	}
-	return "已通过文件快照恢复工作区。"
+	return localizer.T("agent.maker_checker.rollback.snapshot")
 }
 
 func restoreSnapshot(ctx context.Context, snapshot *fileSnapshot) error {

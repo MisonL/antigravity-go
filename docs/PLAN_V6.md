@@ -165,31 +165,37 @@
 
 ### Phase 6A: 控制面收敛
 
-- [ ] 建立 `TaskRecord`，统一 reference、status、evidence、rollback point。
-- [ ] 为 Core Host 增加 watchdog、restart policy、health budget。
+- [DONE] 建立 `TaskRecord`，统一 reference、status、evidence、rollback point。
+- [DONE] 为 Core Host 增加 watchdog、restart policy、health budget。
 - [ ] 为 provider 增加错误分类、重试预算和 fail-fast 策略。
-- [ ] 建立统一 observability scoreboard，而不只是散点摘要。
+- [DONE] 建立统一 observability scoreboard，而不只是散点摘要。
 
 ### Phase 6B: 体验与工程拆分
 
-- [ ] 拆分 `frontend/src/App.tsx`。
-- [ ] 拆分 `frontend/src/index.css` 并建立 token 系统。
+- [DONE] 拆分 `frontend/src/App.tsx`。
+- [DONE] 拆分 `frontend/src/index.css` 并建立 token 系统。
 - [ ] 拆分 `internal/server/server.go` 与 `internal/server/websocket.go` 的协议职责。
 - [ ] 重构 `internal/tui/model.go`，把输入、权限、渲染、命令总线拆开。
 
 ### Phase 6C: 能力升级
 
-- [ ] 引入多 worker 并行执行与 reviewer 汇总。
+- [DONE] 引入多 worker 并行执行与 reviewer 汇总。
 - [ ] 为 `resume` 增加命令历史、环境快照、工作树差异恢复。
-- [ ] 建立 diff-centered 审批工作流。
+- [DONE] 建立 diff-centered 审批工作流。
 - [ ] 扩展 `agy init` 为模板选择器，而不是单模板输出。
 
 ### Phase 6D: 全球化与产品化
 
-- [ ] 建立 i18n 词条系统。
-- [ ] 清理 emoji 与装饰性输出，统一成纯文本与可翻译消息。
+- [DONE] 建立 i18n 词条系统。
+- [DONE] 清理 emoji 与装饰性输出，统一成纯文本与可翻译消息。
 - [ ] 统一前端构建口径，选定 NPM 或 Bun，其余降为可选。
 - [ ] 增加 CI 门禁，至少覆盖 `go build`、`go test ./...`、`frontend npm run build`。
+
+### Phase 6E: 最终完美化优化
+
+- [DONE] 修正部署模板中的 `ENTRYPOINT` / `command` 叠加问题。
+- [DONE] 为前端引入非阻塞通知中心并补齐窄屏布局收口。
+- [DONE] 完成最终文本卫生清理与交付同步。
 
 ## 7. 最终判断
 
@@ -198,8 +204,8 @@ Antigravity Go v0.1.5 目前已经具备“可工作的 Agent 工作台”雏形
 最关键的事实不是功能少，而是：
 
 - 局部闭环已经成立。
-- 全局状态面仍然缺失。
+- 统一任务状态面已经具备基础形态，但 provider 策略分层仍待补齐。
 - 单点故障仍然明显。
-- UI 与 i18n 还停留在原型阶段。
+- UI 与 i18n 已完成第一轮产品化收口，但仍有继续打磨空间。
 
 如果只继续叠加功能，系统会越来越像“能做很多事的实验台”；如果先补控制面、状态面、拆分边界与全球化，才有机会变成真正可与 Claude Code / Codex 正面竞争的产品。

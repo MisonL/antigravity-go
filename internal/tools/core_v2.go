@@ -158,6 +158,13 @@ func (m *CoreV2Manager) ApplyCoreEditTool() Tool {
 			if err := json.Unmarshal(args, &edit); err != nil {
 				return "", err
 			}
+			if rawPath, ok := edit["filePath"].(string); ok && rawPath != "" {
+				resolvedPath, err := ResolvePathWithinWorkspace(ctx, ".", rawPath)
+				if err != nil {
+					return "", err
+				}
+				edit["filePath"] = resolvedPath
+			}
 			res, err := m.client.ApplyCodeEdit(edit)
 			if err != nil {
 				return "", fmt.Errorf("failed to apply core edit: %w", err)

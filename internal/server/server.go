@@ -87,6 +87,9 @@ func NewServer(cfg *config.Config, host *core.Host, agt *agent.Agent, lsp *tools
 
 	// Wire up log broadcasting
 	host.SetOnLog(func(line string) {
+		if rpc.ShouldSilenceDeprecatedLogLine(line) {
+			return
+		}
 		s.ws.Broadcast(map[string]interface{}{
 			"type": "log",
 			"data": line,
@@ -110,11 +113,11 @@ func (s *Server) Start() error {
 		// Docker 场景：允许绑定 0.0.0.0/::，但必须开启 token 鉴权
 		if s.hostAddr == "0.0.0.0" || s.hostAddr == "::" {
 			if strings.TrimSpace(s.authToken) == "" {
-				return fmt.Errorf("绑定到 %q 需要同时设置 --token（启用鉴权），否则会有远程执行风险", s.hostAddr)
+				return fmt.Errorf("binding to %q requires --token to be set, otherwise remote execution risk is too high", s.hostAddr)
 			}
-			log.Printf("⚠️ Web 控制台已绑定到 %s（已启用 token 鉴权），请勿在不可信网络暴露该端口", s.hostAddr)
+			log.Printf("web console bound to %s with token auth enabled; do not expose this port on untrusted networks", s.hostAddr)
 		} else {
-			return fmt.Errorf("出于安全原因，Web 控制台仅允许监听回环地址（127.0.0.1/localhost/::1），或在启用 --token 时监听 0.0.0.0/::，当前为 %q", s.hostAddr)
+			return fmt.Errorf("for safety, the web console may only listen on loopback addresses (127.0.0.1/localhost/::1), or on 0.0.0.0/:: when --token is enabled; current host is %q", s.hostAddr)
 		}
 	}
 
@@ -160,10 +163,10 @@ func (s *Server) Start() error {
 		Handler: handler,
 	}
 
-	log.Printf("🌐 Web Server 已监听：http://%s:%d", s.hostAddr, s.port)
+	log.Printf("web server listening on http://%s:%d", s.hostAddr, s.port)
 
 	if err := s.refreshDynamicMcpTools(); err != nil {
-		log.Printf("刷新 MCP 动态工具失败: %v", err)
+		log.Printf("refresh dynamic MCP tools failed: %v", err)
 	}
 
 	// Start status broadcaster
@@ -244,17 +247,44 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		token := r.Header.Get("Authorization")
+		// 1. Check for cookie
+		cookie, _ := r.Cookie("agy_token")
+		token := ""
+		if cookie != nil {
+			token = cookie.Value
+		}
+
+		// 2. Check for Authorization header
 		if token == "" {
-			// Check query param for WS
+			token = r.Header.Get("Authorization")
+		}
+
+		// 3. Check for query param (and set cookie if valid)
+		if token == "" {
 			token = r.URL.Query().Get("token")
 		}
 
 		// Simple prefix check
 		expected := "Bearer " + s.authToken
-		if s.authToken != "" && token != expected && token != s.authToken {
+		isValid := s.authToken == "" || token == expected || token == s.authToken
+
+		if !isValid {
+			// Special case for static assets: allow if already authorized via cookie in previous requests
+			// but we already checked the cookie above.
 			http.Error(w, "Unauthorized (Invalid Token)", http.StatusUnauthorized)
 			return
+		}
+
+		// If we have a valid token (not from header), set/refresh cookie
+		if s.authToken != "" && token != "" && token != expected {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "agy_token",
+				Value:    token,
+				Path:     "/",
+				HttpOnly: false, // Allow JS to see it if needed, but primarily for browser requests
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   86400, // 24 hours
+			})
 		}
 
 		next.ServeHTTP(w, r)
@@ -453,10 +483,18 @@ func (s *Server) handleTrajectories(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if s.client == nil {
+		writeEmptyJSONArray(w)
+		return
+	}
 
 	manager := corecap.NewTrajectoryManager(s.client)
 	trajectories, err := manager.List()
 	if err != nil {
+		if isDeprecatedPlaneRPCError(err) {
+			writeEmptyJSONArray(w)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -543,10 +581,18 @@ func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if s.client == nil {
+		writeEmptyJSONArray(w)
+		return
+	}
 
 	manager := corecap.NewMemoryManager(s.client)
 	memories, err := manager.Query(nil)
 	if err != nil {
+		if isDeprecatedPlaneRPCError(err) {
+			writeEmptyJSONArray(w)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

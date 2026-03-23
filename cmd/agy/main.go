@@ -59,21 +59,21 @@ func main() {
 		}
 	}
 
-	// Load config
-	cfg, err := config.Load()
+	startupOpts := parseStartupOptions(os.Args[1:])
+	cfg, report, err := prepareStartupConfig(startupOpts)
 	if err != nil {
-		// Just warn, don't fail, use defaults
-		// But config.Load returns defaults on error usually, except parsing error.
-		// If parsing error, we might want to warn.
-		if cfg == nil {
-			cfg = config.DefaultConfig()
-		}
-		fmt.Fprintf(os.Stderr, "[WARN] 配置加载失败: %v (将使用默认配置)\n", err)
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+	for _, message := range report.Messages {
+		fmt.Println(message)
 	}
 
 	// Flags (override config)
 	binPathF := flag.String("bin", "", "antigravity_core 二进制路径")
 	dataDirF := flag.String("data", "", "数据目录")
+	safeStartF := flag.Bool("safe-start", false, "忽略损坏的用户数据并使用隔离的数据目录启动")
+	autoRepairF := flag.Bool("auto-repair", false, "备份损坏的数据目录或配置文件后自动重建")
 	noTUI := flag.Bool("no-tui", false, "禁用 TUI（纯后台模式）")
 	webMode := flag.Bool("web", false, "启动 Web Dashboard")
 	modelF := flag.String("model", "", "模型名称")
@@ -86,6 +86,8 @@ func main() {
 	approvalsF := flag.String("approvals", "", "权限策略：read-only / prompt / full")
 
 	flag.Parse()
+	_ = *safeStartF
+	_ = *autoRepairF
 
 	// Merge flags into config
 	if *binPathF != "" {
@@ -154,9 +156,15 @@ func main() {
 		DataDir: cfg.DataDir,
 	})
 
+	coreDegraded := false
 	if err := host.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "启动 Core 失败: %v\n", err)
-		os.Exit(1)
+		if *webMode || *noTUI {
+			coreDegraded = true
+			fmt.Fprintf(os.Stderr, "[WARN] 启动 Core 失败，Web 将以降级模式启动: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "启动 Core 失败: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	defer func() {
 		if err := host.Stop(); err != nil {
@@ -164,27 +172,50 @@ func main() {
 		}
 	}()
 
-	// Wait for port (critical for liveness check)
-	fmt.Println("[INFO] 等待 Core 端口...")
-	if err := host.WaitForPort(10 * time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "等待 Core 端口失败: %v\n", err)
-		dumpLogs(host)
-		os.Exit(1)
+	httpPort := 0
+	var client *rpc.Client
+	coreReady := false
+	if !coreDegraded {
+		// Wait for port (critical for liveness check)
+		fmt.Println("[INFO] 等待 Core 端口...")
+		if err := host.WaitForPort(10 * time.Second); err != nil {
+			if *webMode || *noTUI {
+				coreDegraded = true
+				fmt.Fprintf(os.Stderr, "[WARN] 等待 Core 端口失败，Web 将以降级模式启动: %v\n", err)
+				dumpLogs(host)
+			} else {
+				fmt.Fprintf(os.Stderr, "等待 Core 端口失败: %v\n", err)
+				dumpLogs(host)
+				os.Exit(1)
+			}
+		}
 	}
 
-	// Create RPC client immediately to keep Core alive
-	httpPort := host.HTTPPort()
-	fmt.Printf("[INFO] 连接 Core (端口 %d)...\n", httpPort)
-	client := rpc.NewClient(httpPort)
+	if !coreDegraded {
+		// Create RPC client immediately to keep Core alive
+		httpPort = host.HTTPPort()
+		fmt.Printf("[INFO] 连接 Core (端口 %d)...\n", httpPort)
+		client = rpc.NewClient(httpPort)
 
-	// Wait for ready (server might need client connection to become ready)
-	fmt.Println("[INFO] 等待 Core 初始化...")
-	if err := host.WaitReady(30 * time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "等待 Core 就绪失败: %v\n", err)
-		dumpLogs(host)
-		os.Exit(1)
+		// Wait for ready (server might need client connection to become ready)
+		fmt.Println("[INFO] 等待 Core 初始化...")
+		if err := host.WaitReady(30 * time.Second); err != nil {
+			if *webMode || *noTUI {
+				coreDegraded = true
+				client = nil
+				httpPort = 0
+				fmt.Fprintf(os.Stderr, "[WARN] 等待 Core 就绪失败，Web 将以降级模式启动: %v\n", err)
+				dumpLogs(host)
+			} else {
+				fmt.Fprintf(os.Stderr, "等待 Core 就绪失败: %v\n", err)
+				dumpLogs(host)
+				os.Exit(1)
+			}
+		} else {
+			coreReady = true
+			fmt.Println("[OK] Core 已就绪")
+		}
 	}
-	fmt.Println("[OK] Core 已就绪")
 
 	// Initialize Agent
 	var baseAgt *agent.Agent
@@ -242,17 +273,19 @@ func main() {
 	if err != nil {
 		cwd = "."
 	}
-	if err := trackWorkspaceRoot(client, cwd); err != nil {
-		fmt.Fprintf(os.Stderr, "注册工作区失败: %v\n", err)
-		os.Exit(1)
+	if coreReady && client != nil {
+		if err := trackWorkspaceRoot(client, cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "注册工作区失败: %v\n", err)
+			os.Exit(1)
+		}
+		host.SetOnRestart(func(info core.RestartInfo) error {
+			client.SetPort(info.HTTPPort)
+			return trackWorkspaceRoot(client, cwd)
+		})
+		lspMgr = tools.NewLSPManager(host, cwd)
 	}
-	host.SetOnRestart(func(info core.RestartInfo) error {
-		client.SetPort(info.HTTPPort)
-		return trackWorkspaceRoot(client, cwd)
-	})
-	lspMgr = tools.NewLSPManager(host, cwd)
 
-	if provider != nil {
+	if provider != nil && coreReady && client != nil && lspMgr != nil {
 		baseAgt = buildBaseAgent(cfg, provider, host, client, lspMgr, cwd)
 
 		// TUI Agent（独立历史 + 可动态切换 approvals）
@@ -261,12 +294,16 @@ func main() {
 		permReqChan = make(chan tui.PermissionRequest)
 		switch cfg.Approvals {
 		case "full":
-			agt.SetPermissionFunc(func(req agent.PermissionRequest) bool { return true })
+			agt.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+				return agent.PermissionDecision{Allow: true}
+			})
 		case "read-only":
-			agt.SetPermissionFunc(func(req agent.PermissionRequest) bool { return false })
+			agt.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+				return agent.PermissionDecision{Allow: false}
+			})
 		default:
-			agt.SetPermissionFunc(func(req agent.PermissionRequest) bool {
-				resChan := make(chan bool)
+			agt.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+				resChan := make(chan agent.PermissionDecision)
 				permReqChan <- tui.PermissionRequest{
 					ToolName: req.ToolName,
 					Args:     req.Args,
@@ -300,8 +337,12 @@ func main() {
 	if *noTUI {
 		fmt.Println()
 		fmt.Println("Antigravity Go 正在以无 TUI 模式运行")
-		fmt.Printf("   Core HTTP 端口: %d\n", httpPort)
-		fmt.Printf("   Core LSP 端口: %d\n", host.LSPPort())
+		if coreReady {
+			fmt.Printf("   Core HTTP 端口: %d\n", httpPort)
+			fmt.Printf("   Core LSP 端口: %d\n", host.LSPPort())
+		} else {
+			fmt.Println("   Core 状态: 未就绪（Web 降级模式）")
+		}
 		fmt.Println("   按 Ctrl+C 退出")
 
 		sigChan := make(chan os.Signal, 1)

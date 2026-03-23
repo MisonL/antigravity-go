@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mison/antigravity-go/internal/pkg/i18n"
 )
 
 func TestBuildApprovalRequestPayloadForWriteFileIncludesDiff(t *testing.T) {
@@ -28,10 +29,13 @@ func TestBuildApprovalRequestPayloadForWriteFileIncludesDiff(t *testing.T) {
 		t.Fatalf("failed to marshal args: %v", err)
 	}
 
-	payload := buildApprovalRequestPayload("write_file", string(rawArgs), root)
+	payload, plan := buildApprovalRequestPayload("zh-CN", "write_file", string(rawArgs), root)
 
 	if payload.Tool != "write_file" {
 		t.Fatalf("unexpected tool: %q", payload.Tool)
+	}
+	if plan == nil {
+		t.Fatal("expected execution plan")
 	}
 	if payload.Metadata["path"] != "notes.txt" {
 		t.Fatalf("unexpected path metadata: %#v", payload.Metadata["path"])
@@ -41,6 +45,9 @@ func TestBuildApprovalRequestPayloadForWriteFileIncludesDiff(t *testing.T) {
 	}
 	if !strings.Contains(payload.Preview, "+after") {
 		t.Fatalf("expected added line in preview, got %q", payload.Preview)
+	}
+	if len(payload.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(payload.Chunks))
 	}
 }
 
@@ -67,8 +74,11 @@ func TestBuildApprovalRequestPayloadForApplyCoreEditIncludesDiff(t *testing.T) {
 		t.Fatalf("failed to marshal args: %v", err)
 	}
 
-	payload := buildApprovalRequestPayload("apply_core_edit", string(rawArgs), root)
+	payload, plan := buildApprovalRequestPayload("zh-CN", "apply_core_edit", string(rawArgs), root)
 
+	if plan == nil {
+		t.Fatal("expected execution plan")
+	}
 	if payload.Metadata["file_path"] != "main.go" {
 		t.Fatalf("unexpected file_path metadata: %#v", payload.Metadata["file_path"])
 	}
@@ -83,8 +93,10 @@ func TestBuildApprovalRequestPayloadForApplyCoreEditIncludesDiff(t *testing.T) {
 func TestCancelPendingApprovalsUnblocksWaiters(t *testing.T) {
 	ch := make(chan approvalDecision, 1)
 	sess := &webSession{
-		pending: map[string]chan approvalDecision{
-			"req-1": ch,
+		pending: map[string]*pendingApproval{
+			"req-1": {
+				ch: ch,
+			},
 		},
 	}
 
@@ -135,7 +147,7 @@ func TestApprovalWithMultibyteChars(t *testing.T) {
 		},
 	})
 
-	payload := buildApprovalRequestPayload("apply_core_edit", string(rawArgs), root)
+	payload, _ := buildApprovalRequestPayload("zh-CN", "apply_core_edit", string(rawArgs), root)
 	if !strings.Contains(payload.Preview, "+你好 世界") {
 		t.Fatalf("expected correct rune-based diff, got %q", payload.Preview)
 	}
@@ -143,7 +155,7 @@ func TestApprovalWithMultibyteChars(t *testing.T) {
 
 func TestConcurrentApprovals(t *testing.T) {
 	sess := &webSession{
-		pending: make(map[string]chan approvalDecision),
+		pending: make(map[string]*pendingApproval),
 	}
 
 	var wg sync.WaitGroup
@@ -158,7 +170,7 @@ func TestConcurrentApprovals(t *testing.T) {
 			ch := make(chan approvalDecision, 1)
 
 			sess.pendingMu.Lock()
-			sess.pending[id] = ch
+			sess.pending[id] = &pendingApproval{ch: ch}
 			sess.pendingMu.Unlock()
 
 			decision := <-ch
@@ -173,7 +185,7 @@ func TestConcurrentApprovals(t *testing.T) {
 	for i := 0; i < count; i++ {
 		id := fmt.Sprintf("req-%d", i)
 		sess.pendingMu.Lock()
-		ch := sess.pending[id]
+		ch := sess.pending[id].ch
 		sess.pendingMu.Unlock()
 		ch <- approvalDecision{Allow: i%2 == 0}
 	}
@@ -185,6 +197,79 @@ func TestConcurrentApprovals(t *testing.T) {
 		if results[i] != expected {
 			t.Errorf("request %d: expected %v, got %v", i, expected, results[i])
 		}
+	}
+}
+
+func TestApplyApprovedChunksWritesOnlySelectedHunks(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "sample.txt")
+	before := strings.Join([]string{
+		"alpha",
+		"line-1",
+		"line-2",
+		"line-3",
+		"line-4",
+		"line-5",
+		"line-6",
+		"line-7",
+		"line-8",
+		"line-9",
+		"line-10",
+		"gamma",
+	}, "\n") + "\n"
+	after := strings.Join([]string{
+		"ALPHA",
+		"line-1",
+		"line-2",
+		"line-3",
+		"line-4",
+		"line-5",
+		"line-6",
+		"line-7",
+		"line-8",
+		"line-9",
+		"line-10",
+		"GAMMA",
+	}, "\n") + "\n"
+	if err := os.WriteFile(target, []byte(before), 0644); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	plan, err := buildApprovalExecutionPlan(i18n.MustLocalizer("zh-CN"), "write_file", target, before, after)
+	if err != nil {
+		t.Fatalf("build plan: %v", err)
+	}
+	if len(plan.hunks) != 2 {
+		t.Fatalf("expected 2 hunks, got %d", len(plan.hunks))
+	}
+
+	result, err := applyApprovedChunks(plan, []string{plan.hunks[0].ID}, nil)
+	if err != nil {
+		t.Fatalf("apply approved chunks: %v", err)
+	}
+	if !strings.Contains(result, "Applied 1/2 approved hunks") {
+		t.Fatalf("unexpected apply result: %q", result)
+	}
+
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(content) != strings.Join([]string{
+		"ALPHA",
+		"line-1",
+		"line-2",
+		"line-3",
+		"line-4",
+		"line-5",
+		"line-6",
+		"line-7",
+		"line-8",
+		"line-9",
+		"line-10",
+		"gamma",
+	}, "\n")+"\n\n" {
+		t.Fatalf("unexpected file content: %q", string(content))
 	}
 }
 

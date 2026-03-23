@@ -103,15 +103,15 @@ func (h *Host) startIndexing() {
 		onStatus("start")
 	}
 
-	fmt.Println("🔍 Indexing codebase...")
+	fmt.Println("Indexing codebase...")
 	if err := h.indexer.ScanProject(h.ctx); err != nil {
-		fmt.Printf("⚠️ Indexing failed: %v\n", err)
+		fmt.Printf("Indexing failed: %v\n", err)
 		if onStatus != nil {
 			onStatus("error: " + err.Error())
 		}
 	} else {
 		summary := h.indexer.GetSummary()
-		fmt.Printf("✅ Indexing complete: %s\n", summary)
+		fmt.Printf("Indexing complete: %s\n", summary)
 		if onStatus != nil {
 			onStatus("complete: " + summary)
 		}
