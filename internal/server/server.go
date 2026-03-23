@@ -37,6 +37,7 @@ type Server struct {
 	host          *core.Host
 	agent         *agent.Agent
 	client        *rpc.Client // Added rpc.Client
+	mcp           *corecap.McpManager
 	lsp           *tools.LSPManager
 	ws            *WSServer
 	httpServer    *http.Server     // Kept for Start/Stop
@@ -71,6 +72,7 @@ func NewServer(cfg *config.Config, host *core.Host, agt *agent.Agent, lsp *tools
 		host:          host,
 		agent:         agt,
 		client:        client,
+		mcp:           corecap.NewMcpManager(client),
 		lsp:           lsp,
 		ws:            NewWSServer(agt, client, tm, workspaceRoot, serverCfg.Approvals, sessionsRoot), // Initialized WSServer with client
 		tm:            tm,
@@ -118,6 +120,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/trajectories", s.handleTrajectories)
 	mux.HandleFunc("/api/trajectories/", s.handleTrajectoryDetail)
 	mux.HandleFunc("/api/memories", s.handleMemories)
+	mux.HandleFunc("/api/mcp", s.handleMCP)
 	mux.HandleFunc("/api/observability/summary", s.handleObservabilitySummary)
 	mux.HandleFunc("/api/rollback", s.handleRollbackStep)
 	mux.HandleFunc("/api/visual-self-test/sample", s.handleVisualSelfTestSample)
@@ -149,6 +152,10 @@ func (s *Server) Start() error {
 	}
 
 	log.Printf("🌐 Web Server 已监听：http://%s:%d", s.hostAddr, s.port)
+
+	if err := s.refreshDynamicMcpTools(); err != nil {
+		log.Printf("刷新 MCP 动态工具失败: %v", err)
+	}
 
 	// Start status broadcaster
 	go s.broadcastStatusLoop()

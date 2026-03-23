@@ -62,6 +62,20 @@ func NewWSServer(baseAgent *agent.Agent, client *rpc.Client, tm *TerminalManager
 	}
 }
 
+func (ws *WSServer) ReplaceToolsByPrefix(prefix string, replacements []tools.Tool) {
+	ws.mutex.Lock()
+	defer ws.mutex.Unlock()
+
+	if ws.baseAgent != nil {
+		ws.baseAgent.ReplaceToolsByPrefix(prefix, replacements)
+	}
+	for _, sess := range ws.sessions {
+		if sess != nil && sess.agent != nil {
+			sess.agent.ReplaceToolsByPrefix(prefix, replacements)
+		}
+	}
+}
+
 func (ws *WSServer) BroadcastObservabilityEvent(toolName string, status string, extra map[string]interface{}) {
 	plane := classifyObservabilityPlane(toolName)
 	if plane == "" {

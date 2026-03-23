@@ -285,6 +285,20 @@ func (a *Agent) RegisterTool(t tools.Tool) {
 	a.tools[t.Definition.Name] = t
 }
 
+func (a *Agent) ReplaceToolsByPrefix(prefix string, replacements []tools.Tool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for name := range a.tools {
+		if strings.HasPrefix(name, prefix) {
+			delete(a.tools, name)
+		}
+	}
+	for _, tool := range replacements {
+		a.tools[tool.Definition.Name] = tool
+	}
+}
+
 func (a *Agent) GetToolDefinitions() []llm.ToolDefinition {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
