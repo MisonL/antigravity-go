@@ -17,6 +17,11 @@ type PermissionFunc func(req PermissionRequest) bool
 
 type ToolCallback func(event string, name string, args string, result string)
 
+type TaskStore interface {
+	CreateTask(reference, rollbackPoint string) (string, error)
+	UpdateTask(id, status, evidence, rollbackPoint string) error
+}
+
 type Agent struct {
 	mu               sync.RWMutex
 	provider         llm.Provider
@@ -28,6 +33,7 @@ type Agent struct {
 	tokenUsage       int
 	maxContextTokens int
 	hasDeniedTool    bool // Track if any tool call was denied by user in this session
+	taskStore        TaskStore
 }
 
 const (
@@ -37,7 +43,15 @@ const (
 	cseFeedbackHeader     = "[CSE Feedback]"
 	writeFileToolName     = "write_file"
 	applyCoreEditToolName = "apply_core_edit"
+	taskStatusRunning     = "running"
+	taskStatusValidating  = "validating"
+	taskStatusSuccess     = "success"
+	taskStatusFailed      = "failed"
 )
+
+const DefaultSystemPrompt = `你是嵌入在 CLI Agent 中的资深工程师助手。能力包含文件操作、内核 RPC 调用、LSP 智能及浏览器自动化操控。
+当问题需要跨 MCP 服务器协同时，先识别每个 MCP 服务器掌握的事实和能力边界，再按“读取事实 -> 交叉验证 -> 执行动作 -> 回写结论”的顺序组合调用。
+不要把单个 MCP 返回的局部结果直接当作最终事实；如果多个 MCP 可以互补，必须主动串联并在结论中说明依赖关系与证据来源。`
 
 func NewAgent(provider llm.Provider, permission PermissionFunc, maxContextTokens int) *Agent {
 	if maxContextTokens <= 0 {
@@ -71,6 +85,12 @@ func (a *Agent) SetToolCallback(cb ToolCallback) {
 	a.toolCallback = cb
 }
 
+func (a *Agent) SetTaskStore(store TaskStore) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.taskStore = store
+}
+
 // CloneWithPrompt creates a new agent with same provider and tools, but new system prompt and empty history.
 func (a *Agent) CloneWithPrompt(prompt string) *Agent {
 	a.mu.RLock()
@@ -88,6 +108,7 @@ func (a *Agent) CloneWithPrompt(prompt string) *Agent {
 		permission:       a.permission,
 		toolCallback:     a.toolCallback,
 		maxContextTokens: a.maxContextTokens,
+		taskStore:        a.taskStore,
 	}
 	newA.SetSystemPrompt(prompt)
 	return newA
@@ -307,10 +328,13 @@ func (a *Agent) GetToolDefinitions() []llm.ToolDefinition {
 	return defs
 }
 
-func (a *Agent) Run(ctx context.Context, input string, localCallback ToolCallback) (string, error) {
+func (a *Agent) Run(ctx context.Context, input string, localCallback ToolCallback) (output string, runErr error) {
 	if err := a.ensureProvider(); err != nil {
 		return "", err
 	}
+
+	taskRun := a.startTaskRun(ctx, input)
+	defer a.finishTaskRun(ctx, taskRun, &output, &runErr)
 
 	// Manage context
 	if err := a.manageContext(ctx); err != nil {
@@ -347,6 +371,7 @@ func (a *Agent) Run(ctx context.Context, input string, localCallback ToolCallbac
 
 		// Check for tool calls
 		if len(resp.ToolCalls) == 0 {
+			a.markTaskValidating(ctx, taskRun, resp.Content)
 			a.FinalizeTask(ctx, input, resp.Content)
 			return resp.Content, nil // Final answer
 		}
@@ -360,10 +385,14 @@ func (a *Agent) Run(ctx context.Context, input string, localCallback ToolCallbac
 	return "", fmt.Errorf("max turns exceeded")
 }
 
-func (a *Agent) RunStream(ctx context.Context, input string, cb llm.StreamCallback, localCallback ToolCallback) error {
+func (a *Agent) RunStream(ctx context.Context, input string, cb llm.StreamCallback, localCallback ToolCallback) (runErr error) {
 	if err := a.ensureProvider(); err != nil {
 		return err
 	}
+
+	var output string
+	taskRun := a.startTaskRun(ctx, input)
+	defer a.finishTaskRun(ctx, taskRun, &output, &runErr)
 
 	// Manage context
 	if err := a.manageContext(ctx); err != nil {
@@ -400,6 +429,8 @@ func (a *Agent) RunStream(ctx context.Context, input string, cb llm.StreamCallba
 
 		// Check for tool calls
 		if len(resp.ToolCalls) == 0 {
+			output = resp.Content
+			a.markTaskValidating(ctx, taskRun, resp.Content)
 			a.FinalizeTask(ctx, input, resp.Content)
 			return nil // Final answer done
 		}
@@ -521,6 +552,118 @@ func (a *Agent) FinalizeTask(ctx context.Context, input, output string) {
 	if _, err := tool.Execute(ctx, raw); err != nil {
 		log.Printf("FinalizeTask skipped: memory save failed: %v", err)
 	}
+}
+
+type taskRunRecord struct {
+	ID            string
+	RollbackPoint string
+}
+
+func (a *Agent) startTaskRun(ctx context.Context, input string) *taskRunRecord {
+	a.mu.RLock()
+	store := a.taskStore
+	a.mu.RUnlock()
+	if store == nil {
+		return nil
+	}
+
+	record := &taskRunRecord{
+		RollbackPoint: a.captureCurrentStepID(ctx),
+	}
+	id, err := store.CreateTask(input, record.RollbackPoint)
+	if err != nil {
+		log.Printf("任务账本创建失败: %v", err)
+		return nil
+	}
+	record.ID = id
+	a.updateTaskStore(record, taskStatusRunning, "任务已开始执行。", record.RollbackPoint)
+	return record
+}
+
+func (a *Agent) markTaskValidating(ctx context.Context, record *taskRunRecord, output string) {
+	if record == nil {
+		return
+	}
+
+	if rollbackPoint := a.captureCurrentStepID(ctx); rollbackPoint != "" {
+		record.RollbackPoint = rollbackPoint
+	}
+	a.updateTaskStore(record, taskStatusValidating, buildTaskEvidence(a.SnapshotMessages(), output), record.RollbackPoint)
+}
+
+func (a *Agent) finishTaskRun(ctx context.Context, record *taskRunRecord, output *string, runErr *error) {
+	if record == nil || output == nil || runErr == nil {
+		return
+	}
+
+	if rollbackPoint := a.captureCurrentStepID(ctx); rollbackPoint != "" {
+		record.RollbackPoint = rollbackPoint
+	}
+
+	if *runErr != nil {
+		a.updateTaskStore(record, taskStatusFailed, buildTaskEvidence(a.SnapshotMessages(), (*runErr).Error()), record.RollbackPoint)
+		return
+	}
+	a.updateTaskStore(record, taskStatusSuccess, buildTaskEvidence(a.SnapshotMessages(), *output), record.RollbackPoint)
+}
+
+func (a *Agent) updateTaskStore(record *taskRunRecord, status, evidence, rollbackPoint string) {
+	if record == nil || strings.TrimSpace(record.ID) == "" {
+		return
+	}
+
+	a.mu.RLock()
+	store := a.taskStore
+	a.mu.RUnlock()
+	if store == nil {
+		return
+	}
+
+	if err := store.UpdateTask(record.ID, status, evidence, rollbackPoint); err != nil {
+		log.Printf("任务账本更新失败(%s): %v", status, err)
+	}
+}
+
+func buildTaskEvidence(messages []llm.Message, finalResult string) string {
+	sections := []string{}
+
+	if validation := latestToolOutput(messages, validationToolName); validation != "" {
+		sections = append(sections, "validation:\n"+truncateTaskEvidence(validation))
+	}
+	if testOutput := latestToolOutput(messages, runCommandToolName); testOutput != "" {
+		sections = append(sections, "test:\n"+truncateTaskEvidence(testOutput))
+	}
+	if diagnostics := latestToolOutput(messages, diagnosticsToolName); diagnostics != "" {
+		sections = append(sections, "diagnostics:\n"+truncateTaskEvidence(diagnostics))
+	}
+	if trimmed := strings.TrimSpace(finalResult); trimmed != "" {
+		sections = append(sections, "result:\n"+truncateTaskEvidence(trimmed))
+	}
+
+	if len(sections) == 0 {
+		return ""
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func latestToolOutput(messages []llm.Message, toolName string) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != llm.RoleTool || msg.Name != toolName {
+			continue
+		}
+		return strings.TrimSpace(msg.Content)
+	}
+	return ""
+}
+
+func truncateTaskEvidence(text string) string {
+	text = strings.TrimSpace(text)
+	const maxLen = 4000
+	if len(text) <= maxLen {
+		return text
+	}
+	return text[:maxLen] + "\n...(truncated)"
 }
 
 func shouldRunCSEFeedback(toolName string) bool {

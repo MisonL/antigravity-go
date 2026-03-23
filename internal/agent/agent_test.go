@@ -14,9 +14,13 @@ import (
 type scriptedProvider struct {
 	responses []llm.Message
 	index     int
+	err       error
 }
 
 func (p *scriptedProvider) Chat(ctx context.Context, messages []llm.Message, toolDefs []llm.ToolDefinition) (llm.Message, error) {
+	if p.err != nil {
+		return llm.Message{}, p.err
+	}
 	if p.index >= len(p.responses) {
 		return llm.Message{}, fmt.Errorf("unexpected provider call %d", p.index)
 	}
@@ -34,6 +38,35 @@ func (p *scriptedProvider) StreamChat(ctx context.Context, messages []llm.Messag
 		cb(resp.Content, nil)
 	}
 	return resp, nil
+}
+
+type fakeTaskStore struct {
+	createdReference string
+	createdRollback  string
+	updates          []taskStoreUpdate
+}
+
+type taskStoreUpdate struct {
+	id            string
+	status        string
+	evidence      string
+	rollbackPoint string
+}
+
+func (s *fakeTaskStore) CreateTask(reference, rollbackPoint string) (string, error) {
+	s.createdReference = reference
+	s.createdRollback = rollbackPoint
+	return "task-1", nil
+}
+
+func (s *fakeTaskStore) UpdateTask(id, status, evidence, rollbackPoint string) error {
+	s.updates = append(s.updates, taskStoreUpdate{
+		id:            id,
+		status:        status,
+		evidence:      evidence,
+		rollbackPoint: rollbackPoint,
+	})
+	return nil
 }
 
 func TestRunAddsDiagnosticsFeedbackAfterCodeEdit(t *testing.T) {
@@ -205,6 +238,50 @@ func TestRunIgnoresFinalizeTaskFailure(t *testing.T) {
 	}
 	if result != "done" {
 		t.Fatalf("unexpected final result: %q", result)
+	}
+}
+
+func TestRunUpdatesTaskLedgerLifecycle(t *testing.T) {
+	provider := &scriptedProvider{
+		responses: []llm.Message{
+			{Role: llm.RoleAssistant, Content: "done"},
+		},
+	}
+	store := &fakeTaskStore{}
+
+	agt := NewAgent(provider, nil, 4096)
+	agt.SetTaskStore(store)
+
+	result, err := agt.Run(context.Background(), "实现任务账本", nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("unexpected final result: %q", result)
+	}
+	if store.createdReference != "实现任务账本" {
+		t.Fatalf("unexpected created reference: %q", store.createdReference)
+	}
+	if len(store.updates) != 3 {
+		t.Fatalf("expected 3 task ledger updates, got %d", len(store.updates))
+	}
+	if store.updates[0].status != taskStatusRunning {
+		t.Fatalf("expected first status to be running, got %q", store.updates[0].status)
+	}
+	if store.updates[1].status != taskStatusValidating {
+		t.Fatalf("expected second status to be validating, got %q", store.updates[1].status)
+	}
+	if store.updates[2].status != taskStatusSuccess {
+		t.Fatalf("expected final status to be success, got %q", store.updates[2].status)
+	}
+	if !strings.Contains(store.updates[2].evidence, "done") {
+		t.Fatalf("expected final evidence to contain result, got %q", store.updates[2].evidence)
+	}
+}
+
+func TestDefaultSystemPromptIncludesMCPCoordination(t *testing.T) {
+	if !strings.Contains(DefaultSystemPrompt, "跨 MCP 服务器协同") {
+		t.Fatalf("expected MCP coordination guidance in default prompt, got %q", DefaultSystemPrompt)
 	}
 }
 
