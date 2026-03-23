@@ -4,6 +4,7 @@ import { CodeViewer } from './components/CodeViewer';
 import { TerminalPanel } from './components/TerminalPanel';
 import { ApprovalModal, ApprovalRequest } from './components/ApprovalModal';
 import { MemoryModal } from './components/MemoryModal';
+import { McpPanel } from './components/McpPanel';
 import { TrajectoryModal } from './components/TrajectoryModal';
 import { VisualSelfTestModal } from './components/VisualSelfTestModal';
 import {
@@ -128,6 +129,7 @@ function App() {
   });
   const [showTrajectoryModal, setShowTrajectoryModal] = useState(false);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
+  const [showMcpPanel, setShowMcpPanel] = useState(false);
   const [trajectories, setTrajectories] = useState<TrajectorySummary[]>([]);
   const [trajectoriesLoading, setTrajectoriesLoading] = useState(false);
   const [trajectoriesError, setTrajectoriesError] = useState('');
@@ -569,6 +571,9 @@ function App() {
           <button className="badge badge-btn" data-testid="open-memory" type="button" onClick={handleOpenMemoryModal}>
             系统记忆 {observabilitySummary ? `(${observabilitySummary.memories.count})` : ''}
           </button>
+          <button className="badge badge-btn" type="button" onClick={() => setShowMcpPanel(true)}>
+            MCP
+          </button>
           <button className="badge badge-btn" data-testid="open-visual-self-test" type="button" onClick={handleOpenVisualSelfTestModal}>
             视觉自测
           </button>
@@ -845,6 +850,12 @@ function App() {
           listError={memoriesError}
           onClose={() => setShowMemoryModal(false)}
           onRefresh={() => fetchMemories(true)}
+        />
+      )}
+      {showMcpPanel && (
+        <McpPanel
+          onClose={() => setShowMcpPanel(false)}
+          token={token}
         />
       )}
       {showVisualSelfTestModal && (

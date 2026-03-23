@@ -753,7 +753,8 @@ body {
 }
 
 .form-group input,
-.form-group select {
+.form-group select,
+.form-group textarea {
   width: 100%;
   padding: 0.75rem 0.875rem;
   border-radius: 10px;
@@ -762,6 +763,12 @@ body {
   color: var(--text-primary);
   font-size: 0.9rem;
   box-sizing: border-box;
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 140px;
+  font-family: "JetBrains Mono", monospace;
 }
 
 .btn-primary,
@@ -782,6 +789,11 @@ body {
   background: rgba(255, 255, 255, 0.88);
   color: var(--text-primary);
   border-color: rgba(16, 24, 40, 0.12);
+}
+
+.btn-danger {
+  color: var(--error);
+  border-color: rgba(220, 38, 38, 0.2);
 }
 
 .approval-modal {
@@ -1052,6 +1064,85 @@ body {
 .data-state-success {
   color: #166534;
   background: rgba(34, 197, 94, 0.08);
+}
+
+.mcp-modal {
+  width: min(1180px, calc(100vw - 2rem));
+}
+
+.mcp-capability-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0 1.25rem 1rem;
+}
+
+.mcp-server-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0 1rem 1rem;
+  overflow: auto;
+}
+
+.mcp-server-card {
+  padding: 1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.mcp-server-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.mcp-server-card__title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mcp-server-card__meta {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.mcp-server-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mcp-tool-list {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.mcp-tool-chip {
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary-color);
+  font-size: 0.76rem;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.mcp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem 1.25rem;
+  overflow: auto;
 }
 
 .memory-list {
