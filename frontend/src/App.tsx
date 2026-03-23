@@ -2,6 +2,19 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileTree } from './components/FileTree';
 import { CodeViewer } from './components/CodeViewer';
 import { TerminalPanel } from './components/TerminalPanel';
+import { ApprovalModal, ApprovalRequest } from './components/ApprovalModal';
+import { MemoryModal } from './components/MemoryModal';
+import { TrajectoryModal } from './components/TrajectoryModal';
+import { VisualSelfTestModal } from './components/VisualSelfTestModal';
+import {
+  isRecord,
+  JsonRecord,
+  MemorySummary,
+  normalizeMemories,
+  normalizeTrajectorySteps,
+  normalizeTrajectories,
+  TrajectorySummary,
+} from './components/planeData';
 import './index.css';
 
 interface ServerStatus {
@@ -21,6 +34,58 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content?: string;
   toolData?: ToolData;
+}
+
+interface PlaneSnapshot {
+  count: number;
+  latest_id?: string;
+  latest_updated_at?: string;
+}
+
+interface ObservabilitySummary {
+  generated_at: string;
+  memories: PlaneSnapshot;
+  trajectories: PlaneSnapshot;
+}
+
+interface ObservabilityEvent {
+  message: string;
+  plane: string;
+  status: string;
+  timestamp: string;
+  tool: string;
+}
+
+interface SelfTestChecklistItem {
+  label: string;
+  selector: string;
+}
+
+interface VisualSelfTestSample {
+  checklist: SelfTestChecklistItem[];
+  task: string;
+  title: string;
+  url: string;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return fallback;
+}
+
+function normalizeApprovalRequest(payload: unknown): ApprovalRequest {
+  const data = isRecord(payload) ? payload : {};
+  return {
+    id: typeof data.id === 'string' ? data.id : '',
+    tool: typeof data.tool === 'string' ? data.tool : '',
+    category: typeof data.category === 'string' ? data.category : 'tool_execution',
+    summary: typeof data.summary === 'string' ? data.summary : '工具请求执行，需要人工确认。',
+    args: typeof data.args === 'string' ? data.args : '',
+    preview: typeof data.preview === 'string' ? data.preview : '',
+    metadata: isRecord(data.metadata) ? data.metadata : {},
+  };
 }
 
 function App() {
@@ -46,7 +111,7 @@ function App() {
   const [streamingResponse, setStreamingResponse] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const [permissionReq, setPermissionReq] = useState<{ id: string; tool: string; args: string } | null>(null);
+  const [approvalReq, setApprovalReq] = useState<ApprovalRequest | null>(null);
 
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
@@ -61,6 +126,214 @@ function App() {
     base_url: '',
     api_key: '',
   });
+  const [showTrajectoryModal, setShowTrajectoryModal] = useState(false);
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
+  const [trajectories, setTrajectories] = useState<TrajectorySummary[]>([]);
+  const [trajectoriesLoading, setTrajectoriesLoading] = useState(false);
+  const [trajectoriesError, setTrajectoriesError] = useState('');
+  const [selectedTrajectoryId, setSelectedTrajectoryId] = useState('');
+  const [selectedTrajectoryDetail, setSelectedTrajectoryDetail] = useState<JsonRecord | null>(null);
+  const [trajectoryDetailLoading, setTrajectoryDetailLoading] = useState(false);
+  const [trajectoryDetailError, setTrajectoryDetailError] = useState('');
+  const [rollbackStepId, setRollbackStepId] = useState('');
+  const [rollbackError, setRollbackError] = useState('');
+  const [rollbackSuccess, setRollbackSuccess] = useState('');
+  const [memories, setMemories] = useState<MemorySummary[]>([]);
+  const [memoriesLoading, setMemoriesLoading] = useState(false);
+  const [memoriesError, setMemoriesError] = useState('');
+  const [observabilitySummary, setObservabilitySummary] = useState<ObservabilitySummary | null>(null);
+  const [observabilityError, setObservabilityError] = useState('');
+  const [latestObservabilityEvent, setLatestObservabilityEvent] = useState<ObservabilityEvent | null>(null);
+  const [showVisualSelfTestModal, setShowVisualSelfTestModal] = useState(false);
+  const [visualSelfTestLoading, setVisualSelfTestLoading] = useState(false);
+  const [visualSelfTestError, setVisualSelfTestError] = useState('');
+  const [visualSelfTestSample, setVisualSelfTestSample] = useState<VisualSelfTestSample | null>(null);
+  const trajectorySteps = normalizeTrajectorySteps(selectedTrajectoryDetail);
+
+  async function fetchObservabilitySummary() {
+    setObservabilityError('');
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/observability/summary${suffix}`);
+      if (!resp.ok) {
+        throw new Error(`可观测性摘要请求失败: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      setObservabilitySummary(data as ObservabilitySummary);
+    } catch (error) {
+      setObservabilityError(getErrorMessage(error, '加载可观测性摘要失败。'));
+    }
+  }
+
+  async function fetchTrajectoryDetail(id: string, force = false) {
+    if (!id) {
+      return;
+    }
+    if (!force && id === selectedTrajectoryId && selectedTrajectoryDetail) {
+      return;
+    }
+
+    setSelectedTrajectoryId(id);
+    setTrajectoryDetailLoading(true);
+    setTrajectoryDetailError('');
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/trajectories/${encodeURIComponent(id)}${suffix}`);
+      if (!resp.ok) {
+        throw new Error(`轨迹详情请求失败: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      if (!isRecord(data)) {
+        throw new Error('轨迹详情格式无效');
+      }
+
+      setSelectedTrajectoryDetail(data);
+      setRollbackError('');
+      setRollbackSuccess('');
+    } catch (error) {
+      setSelectedTrajectoryDetail(null);
+      setTrajectoryDetailError(getErrorMessage(error, '加载轨迹详情失败。'));
+    } finally {
+      setTrajectoryDetailLoading(false);
+    }
+  }
+
+  async function fetchTrajectories(force = false) {
+    if (!force && trajectories.length > 0) {
+      return;
+    }
+
+    setTrajectoriesLoading(true);
+    setTrajectoriesError('');
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/trajectories${suffix}`);
+      if (!resp.ok) {
+        throw new Error(`轨迹列表请求失败: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      const normalized = normalizeTrajectories(data);
+      setTrajectories(normalized);
+      await fetchObservabilitySummary();
+
+      if (normalized.length === 0) {
+        setSelectedTrajectoryId('');
+        setSelectedTrajectoryDetail(null);
+        setTrajectoryDetailError('');
+        return;
+      }
+
+      const nextId = normalized.some((item) => item.id === selectedTrajectoryId)
+        ? selectedTrajectoryId
+        : normalized[0].id;
+
+      await fetchTrajectoryDetail(nextId, force);
+    } catch (error) {
+      setTrajectoriesError(getErrorMessage(error, '加载轨迹列表失败。'));
+    } finally {
+      setTrajectoriesLoading(false);
+    }
+  }
+
+  async function fetchMemories(force = false) {
+    if (!force && memories.length > 0) {
+      return;
+    }
+
+    setMemoriesLoading(true);
+    setMemoriesError('');
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/memories${suffix}`);
+      if (!resp.ok) {
+        throw new Error(`记忆列表请求失败: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      setMemories(normalizeMemories(data));
+      await fetchObservabilitySummary();
+    } catch (error) {
+      setMemoriesError(getErrorMessage(error, '加载系统记忆失败。'));
+    } finally {
+      setMemoriesLoading(false);
+    }
+  }
+
+  async function rollbackToStep(stepId: string) {
+    if (!stepId) {
+      return;
+    }
+
+    setRollbackStepId(stepId);
+    setRollbackError('');
+    setRollbackSuccess('');
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/rollback${suffix}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step_id: stepId }),
+      });
+      if (!resp.ok) {
+        const message = await resp.text();
+        throw new Error(message || `回滚失败: ${resp.status}`);
+      }
+
+      setRollbackSuccess(`已提交回滚请求: ${stepId}`);
+      await fetchTrajectories(true);
+    } catch (error) {
+      setRollbackError(getErrorMessage(error, '轨迹回滚失败。'));
+    } finally {
+      setRollbackStepId('');
+    }
+  }
+
+  async function fetchVisualSelfTestSample(force = false) {
+    if (!force && visualSelfTestSample) {
+      return;
+    }
+
+    setVisualSelfTestLoading(true);
+    setVisualSelfTestError('');
+
+    try {
+      const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+      const resp = await fetch(`/api/visual-self-test/sample${suffix}`);
+      if (!resp.ok) {
+        throw new Error(`视觉自测任务请求失败: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      setVisualSelfTestSample(data as VisualSelfTestSample);
+    } catch (error) {
+      setVisualSelfTestError(getErrorMessage(error, '加载视觉自测任务失败。'));
+    } finally {
+      setVisualSelfTestLoading(false);
+    }
+  }
+
+  async function handleOpenTrajectoryModal() {
+    setShowTrajectoryModal(true);
+    await fetchTrajectories();
+  }
+
+  async function handleOpenMemoryModal() {
+    setShowMemoryModal(true);
+    await fetchMemories();
+  }
+
+  async function handleOpenVisualSelfTestModal() {
+    setShowVisualSelfTestModal(true);
+    await fetchVisualSelfTestSample();
+  }
 
   const fetchConfig = async () => {
     try {
@@ -76,7 +349,26 @@ function App() {
 
   useEffect(() => {
     fetchConfig();
+    fetchObservabilitySummary();
   }, []);
+
+  useEffect(() => {
+    if (!latestObservabilityEvent) {
+      return;
+    }
+    if (latestObservabilityEvent.status === 'running') {
+      return;
+    }
+
+    fetchObservabilitySummary();
+
+    if ((latestObservabilityEvent.plane === 'trajectory' || latestObservabilityEvent.plane === 'workspace') && showTrajectoryModal) {
+      fetchTrajectories(true);
+    }
+    if (latestObservabilityEvent.plane === 'memory' && showMemoryModal) {
+      fetchMemories(true);
+    }
+  }, [latestObservabilityEvent, showMemoryModal, showTrajectoryModal]);
 
   const handleSaveConfig = async () => {
     try {
@@ -205,16 +497,14 @@ function App() {
                 }
                 return newMsgs;
             });
-        } else if (msg.type === 'permission_request') {
-            setPermissionReq({
-              id: msg.data?.id || '',
-              tool: msg.data?.tool || '',
-              args: msg.data?.args || '',
-            });
-        } else if (msg.type === 'permission_timeout') {
+        } else if (msg.type === 'approval_request' || msg.type === 'permission_request') {
+            setApprovalReq(normalizeApprovalRequest(msg.data));
+        } else if (msg.type === 'approval_timeout' || msg.type === 'permission_timeout') {
             const id = msg.data?.id || '';
-            setPermissionReq((prev) => (prev && prev.id === id ? null : prev));
+            setApprovalReq((prev) => (prev && prev.id === id ? null : prev));
             setChatMessages((msgs) => [...msgs, { role: 'assistant', content: '⚠️ 授权请求已超时，已自动拒绝。请重新触发一次操作。' }]);
+        } else if (msg.type === 'observability_event') {
+            setLatestObservabilityEvent(msg.data as ObservabilityEvent);
         }
       } catch (e) {
         console.error('WS parse error', e);
@@ -242,20 +532,20 @@ function App() {
   };
 
   const handleSendMessage = useCallback(() => {
-    if (!input.trim() || !wsRef.current || isThinking || permissionReq) return;
+    if (!input.trim() || !wsRef.current || isThinking || approvalReq) return;
 
     setChatMessages(msgs => [...msgs, { role: 'user', content: input }]);
     wsRef.current.send(JSON.stringify({ type: 'chat', payload: input }));
     setInput('');
-  }, [input, isThinking, permissionReq]);
+  }, [approvalReq, input, isThinking]);
 
-  const handlePermissionDecision = (allow: boolean) => {
-    if (!wsRef.current || !permissionReq) return;
+  const handleApprovalDecision = (allow: boolean) => {
+    if (!wsRef.current || !approvalReq) return;
     wsRef.current.send(JSON.stringify({
-      type: 'permission_response',
-      payload: JSON.stringify({ id: permissionReq.id, allow }),
+      type: 'approval_response',
+      payload: JSON.stringify({ id: approvalReq.id, allow }),
     }));
-    setPermissionReq(null);
+    setApprovalReq(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent | KeyboardEvent) => {
@@ -267,19 +557,30 @@ function App() {
 
   return (
     <div className="container">
-      <header className="glass-header">
+      <header className="glass-header" data-testid="dashboard-header">
         <div className="logo">
           <span className="logo-icon">🚀</span>
           <h1>Antigravity <span className="highlight">控制台</span></h1>
         </div>
         <div className="status-bar">
-          <button 
-            className="badge badge-btn" 
-            onClick={() => setShowSettings(true)}
-            style={{ cursor: 'pointer', border: 'none', background: 'rgba(0,0,0,0.05)', marginRight: '8px' }}
-          >
-            ⚙️ 设置
+          <button className="badge badge-btn" data-testid="open-trajectory" type="button" onClick={handleOpenTrajectoryModal}>
+            轨迹树 {observabilitySummary ? `(${observabilitySummary.trajectories.count})` : ''}
           </button>
+          <button className="badge badge-btn" data-testid="open-memory" type="button" onClick={handleOpenMemoryModal}>
+            系统记忆 {observabilitySummary ? `(${observabilitySummary.memories.count})` : ''}
+          </button>
+          <button className="badge badge-btn" data-testid="open-visual-self-test" type="button" onClick={handleOpenVisualSelfTestModal}>
+            视觉自测
+          </button>
+          <button className="badge badge-btn" type="button" onClick={() => setShowSettings(true)}>
+            设置
+          </button>
+          {latestObservabilityEvent && (
+            <span className="badge info" title={latestObservabilityEvent.timestamp}>
+              {latestObservabilityEvent.message}
+            </span>
+          )}
+          {observabilityError && <span className="badge error">{observabilityError}</span>}
           {indexStatus && !indexStatus.includes('complete') && (
               <span className="badge processing pulse">🔍 索引中…</span>
           )}
@@ -353,6 +654,7 @@ function App() {
 	                    <button onClick={() => setInput("请先用 get_project_summary 总结项目结构，并给出关键模块说明。")}>🗺️ 项目地图</button>
 	                    <button onClick={() => setInput("请审查 internal/agent 包，找出潜在 bug/边界条件/并发风险。")}>🐛 找 Bug</button>
 	                    <button onClick={() => setInput("请基于 cmd/agy/main.go 解释系统整体架构与关键数据流。")}>🏗️ 架构说明</button>
+                      <button onClick={() => visualSelfTestSample ? setInput(visualSelfTestSample.task) : handleOpenVisualSelfTestModal()}>视觉自测</button>
 	                </div>
 	            </div>
 	          ) : (
@@ -431,7 +733,7 @@ function App() {
 	                onKeyDown={handleKeyDown}
 	                disabled={isThinking}
 	                />
-	                <button className="send-button" onClick={handleSendMessage} disabled={isThinking || !input.trim() || permissionReq != null}>
+	                <button className="send-button" onClick={handleSendMessage} disabled={isThinking || !input.trim() || approvalReq != null}>
 	                发送
 	                </button>
 	            </div>
@@ -448,78 +750,8 @@ function App() {
         </aside>
       </main>
 
-      {permissionReq && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-        >
-          <div
-            className="glass-panel"
-            style={{
-              width: "min(720px, calc(100vw - 32px))",
-              padding: "16px",
-              borderRadius: "12px",
-              border: "1px solid rgba(0,0,0,0.08)",
-              background: "rgba(255,255,255,0.85)",
-              backdropFilter: "blur(10px)",
-              boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>需要授权执行工具</div>
-            <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 10 }}>
-              工具：<code>{permissionReq.tool}</code>
-            </div>
-            <pre
-              style={{
-                margin: 0,
-                padding: 12,
-                borderRadius: 10,
-                background: "rgba(0,0,0,0.06)",
-                maxHeight: 240,
-                overflow: "auto",
-                fontSize: 12,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
-              {permissionReq.args}
-            </pre>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-              <button
-                onClick={() => handlePermissionDecision(false)}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(0,0,0,0.12)",
-                  background: "rgba(255,255,255,0.9)",
-                  cursor: "pointer",
-                }}
-              >
-                拒绝
-              </button>
-              <button
-                onClick={() => handlePermissionDecision(true)}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(47,129,247,0.35)",
-                  background: "rgba(47,129,247,0.14)",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                允许
-              </button>
-            </div>
-          </div>
-        </div>
+      {approvalReq && (
+        <ApprovalModal request={approvalReq} onDecision={handleApprovalDecision} />
       )}
       {showSettings && (
         <div className="modal-overlay">
@@ -586,6 +818,47 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+      {showTrajectoryModal && (
+        <TrajectoryModal
+          detailError={trajectoryDetailError}
+          detailLoading={trajectoryDetailLoading}
+          isLoading={trajectoriesLoading}
+          items={trajectories}
+          listError={trajectoriesError}
+          onClose={() => setShowTrajectoryModal(false)}
+          onRefresh={() => fetchTrajectories(true)}
+          onRollback={rollbackToStep}
+          onSelect={(id) => fetchTrajectoryDetail(id, true)}
+          rollbackError={rollbackError}
+          rollbackStepId={rollbackStepId}
+          rollbackSuccess={rollbackSuccess}
+          selectedDetail={selectedTrajectoryDetail}
+          selectedId={selectedTrajectoryId}
+          steps={trajectorySteps}
+        />
+      )}
+      {showMemoryModal && (
+        <MemoryModal
+          isLoading={memoriesLoading}
+          items={memories}
+          listError={memoriesError}
+          onClose={() => setShowMemoryModal(false)}
+          onRefresh={() => fetchMemories(true)}
+        />
+      )}
+      {showVisualSelfTestModal && (
+        <VisualSelfTestModal
+          error={visualSelfTestError}
+          isLoading={visualSelfTestLoading}
+          onClose={() => setShowVisualSelfTestModal(false)}
+          onInsertTask={(task) => {
+            setInput(task);
+            setShowVisualSelfTestModal(false);
+          }}
+          onRefresh={() => fetchVisualSelfTestSample(true)}
+          sample={visualSelfTestSample}
+        />
       )}
     </div>
   );

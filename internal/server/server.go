@@ -17,6 +17,7 @@ import (
 	"github.com/mison/antigravity-go/internal/agent"
 	"github.com/mison/antigravity-go/internal/config"
 	"github.com/mison/antigravity-go/internal/core"
+	"github.com/mison/antigravity-go/internal/corecap"
 
 	"github.com/mison/antigravity-go/internal/pkg/pathutil"
 	"github.com/mison/antigravity-go/internal/rpc"
@@ -114,6 +115,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/history", s.handleHistory)
+	mux.HandleFunc("/api/trajectories", s.handleTrajectories)
+	mux.HandleFunc("/api/trajectories/", s.handleTrajectoryDetail)
+	mux.HandleFunc("/api/memories", s.handleMemories)
+	mux.HandleFunc("/api/observability/summary", s.handleObservabilitySummary)
+	mux.HandleFunc("/api/rollback", s.handleRollbackStep)
+	mux.HandleFunc("/api/visual-self-test/sample", s.handleVisualSelfTestSample)
 
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 	mux.HandleFunc("/api/sessions/", s.handleSessionDetail)
@@ -370,6 +377,63 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(metas)
+}
+
+func (s *Server) handleTrajectories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	manager := corecap.NewTrajectoryManager(s.client)
+	trajectories, err := manager.List()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(trajectories)
+}
+
+func (s *Server) handleTrajectoryDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/trajectories/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	manager := corecap.NewTrajectoryManager(s.client)
+	trajectory, err := manager.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(trajectory)
+}
+
+func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	manager := corecap.NewMemoryManager(s.client)
+	memories, err := manager.Query(nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(memories)
 }
 
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {

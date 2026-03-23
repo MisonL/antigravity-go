@@ -30,7 +30,7 @@ type webSession struct {
 	rec   *session.Recorder
 
 	pendingMu sync.Mutex
-	pending   map[string]chan bool
+	pending   map[string]chan approvalDecision
 }
 
 type WSServer struct {
@@ -60,6 +60,29 @@ func NewWSServer(baseAgent *agent.Agent, client *rpc.Client, tm *TerminalManager
 		sessionsRoot:     sessionsRoot,
 		sessions:         make(map[*websocket.Conn]*webSession),
 	}
+}
+
+func (ws *WSServer) BroadcastObservabilityEvent(toolName string, status string, extra map[string]interface{}) {
+	plane := classifyObservabilityPlane(toolName)
+	if plane == "" {
+		return
+	}
+
+	data := map[string]interface{}{
+		"plane":     plane,
+		"tool":      toolName,
+		"status":    status,
+		"message":   buildObservabilityMessage(plane, toolName, status),
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+	for key, value := range extra {
+		data[key] = value
+	}
+
+	ws.Broadcast(map[string]interface{}{
+		"type": "observability_event",
+		"data": data,
+	})
 }
 
 func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +119,7 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 		ws.sessions[conn] = &webSession{
 			agent:   agentForConn,
 			rec:     rec,
-			pending: make(map[string]chan bool),
+			pending: make(map[string]chan approvalDecision),
 		}
 	}
 	ws.mutex.Unlock()
@@ -115,6 +138,9 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 			sess := ws.sessions[conn]
 			delete(ws.sessions, conn)
 			ws.mutex.Unlock()
+			if sess != nil {
+				sess.cancelPendingApprovals("connection_closed")
+			}
 			if sess != nil && sess.rec != nil {
 				_ = sess.rec.Close()
 			}
@@ -144,8 +170,8 @@ func (ws *WSServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 				if err := json.Unmarshal([]byte(msg.Payload), &feedback); err == nil {
 					ws.client.RecordChatFeedback(feedback)
 				}
-			case "permission_response":
-				ws.handlePermissionResponse(conn, msg.Payload)
+			case "approval_response", "permission_response":
+				ws.handleApprovalResponse(conn, msg.Payload)
 			}
 		}
 	}()
@@ -236,6 +262,17 @@ func (ws *WSServer) handleChat(conn *websocket.Conn, input string) {
 				"result": result,
 			})
 		}
+
+		switch event {
+		case "start":
+			ws.BroadcastObservabilityEvent(name, "running", nil)
+		case "end":
+			ws.BroadcastObservabilityEvent(name, "completed", nil)
+		case "error":
+			ws.BroadcastObservabilityEvent(name, "error", map[string]interface{}{
+				"error": result,
+			})
+		}
 	})
 
 	if err != nil {
@@ -305,47 +342,72 @@ func (ws *WSServer) normalizeWorkspacePath(p string) string {
 	return filepath.ToSlash(rel)
 }
 
+func (s *webSession) cancelPendingApprovals(reason string) {
+	if s == nil {
+		return
+	}
+
+	s.pendingMu.Lock()
+	pending := s.pending
+	s.pending = make(map[string]chan approvalDecision)
+	s.pendingMu.Unlock()
+
+	for _, ch := range pending {
+		select {
+		case ch <- approvalDecision{Allow: false, Reason: reason}:
+		default:
+		}
+		close(ch)
+	}
+}
+
 func (ws *WSServer) permissionFuncForConn(conn *websocket.Conn, mode string) agent.PermissionFunc {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "full":
-		return func(toolName, args string) bool { return true }
+		return func(req agent.PermissionRequest) bool { return true }
 	case "read-only", "readonly":
-		return func(toolName, args string) bool { return false }
+		return func(req agent.PermissionRequest) bool { return false }
 	default:
 		// prompt
-		return func(toolName, args string) bool {
+		return func(req agent.PermissionRequest) bool {
 			sess := ws.getSession(conn)
 			if sess == nil {
 				return false
 			}
 
 			reqID := fmt.Sprintf("%d", time.Now().UnixNano())
-			ch := make(chan bool, 1)
+			ch := make(chan approvalDecision, 1)
 
 			sess.pendingMu.Lock()
 			sess.pending[reqID] = ch
 			sess.pendingMu.Unlock()
 
+			payload := buildApprovalRequestPayload(req.ToolName, req.Args, ws.workspaceRoot)
+			payload.ID = reqID
 			ws.sendJSON(conn, map[string]interface{}{
-				"type": "permission_request",
-				"data": map[string]string{
-					"id":   reqID,
-					"tool": toolName,
-					"args": args,
-				},
+				"type": "approval_request",
+				"data": payload,
 			})
 
 			select {
-			case allow := <-ch:
+			case decision, ok := <-ch:
+				allow := ok && decision.Allow
 				if sess.rec != nil {
-					_ = sess.rec.Append("permission_decision", map[string]any{
+					record := map[string]any{
 						"id":    reqID,
-						"tool":  toolName,
+						"tool":  req.ToolName,
 						"allow": allow,
-					})
+					}
+					if decision.Reason != "" {
+						record["reason"] = decision.Reason
+					}
+					if !ok {
+						record["reason"] = "channel_closed"
+					}
+					_ = sess.rec.Append("approval_decision", record)
 				}
 				return allow
-			case <-time.After(60 * time.Second):
+			case <-time.After(approvalWaitTimeout):
 				// 超时需要清理 pending，避免泄漏并让前端弹窗可关闭
 				sess.pendingMu.Lock()
 				ch2, ok := sess.pending[reqID]
@@ -354,17 +416,21 @@ func (ws *WSServer) permissionFuncForConn(conn *websocket.Conn, mode string) age
 				}
 				sess.pendingMu.Unlock()
 				if ok {
+					select {
+					case ch2 <- approvalDecision{Allow: false, Reason: "timeout"}:
+					default:
+					}
 					close(ch2)
 					if sess.rec != nil {
-						_ = sess.rec.Append("permission_decision", map[string]any{
+						_ = sess.rec.Append("approval_decision", map[string]any{
 							"id":     reqID,
-							"tool":   toolName,
+							"tool":   req.ToolName,
 							"allow":  false,
 							"reason": "timeout",
 						})
 					}
 					ws.sendJSON(conn, map[string]interface{}{
-						"type": "permission_timeout",
+						"type": "approval_timeout",
 						"data": map[string]string{
 							"id": reqID,
 						},
@@ -376,11 +442,8 @@ func (ws *WSServer) permissionFuncForConn(conn *websocket.Conn, mode string) age
 	}
 }
 
-func (ws *WSServer) handlePermissionResponse(conn *websocket.Conn, payload string) {
-	var resp struct {
-		ID    string `json:"id"`
-		Allow bool   `json:"allow"`
-	}
+func (ws *WSServer) handleApprovalResponse(conn *websocket.Conn, payload string) {
+	var resp approvalResponsePayload
 	if err := json.Unmarshal([]byte(payload), &resp); err != nil {
 		return
 	}
@@ -403,7 +466,7 @@ func (ws *WSServer) handlePermissionResponse(conn *websocket.Conn, payload strin
 	if !ok {
 		return
 	}
-	ch <- resp.Allow
+	ch <- approvalDecision{Allow: resp.Allow}
 	close(ch)
 }
 
@@ -418,6 +481,32 @@ func (ws *WSServer) TotalTokenUsage() int {
 		total += sess.agent.GetTokenUsage()
 	}
 	return total
+}
+
+func classifyObservabilityPlane(toolName string) string {
+	switch {
+	case strings.HasPrefix(toolName, "trajectory_"), toolName == "rollback_to_step":
+		return "trajectory"
+	case strings.HasPrefix(toolName, "memory_"):
+		return "memory"
+	case strings.HasPrefix(toolName, "browser_"):
+		return "visual"
+	case toolName == "apply_core_edit", toolName == "edit_preview", toolName == "get_validation_states":
+		return "workspace"
+	default:
+		return ""
+	}
+}
+
+func buildObservabilityMessage(plane string, toolName string, status string) string {
+	switch status {
+	case "running":
+		return fmt.Sprintf("%s plane 正在执行 %s", plane, toolName)
+	case "error":
+		return fmt.Sprintf("%s plane 执行 %s 失败", plane, toolName)
+	default:
+		return fmt.Sprintf("%s plane 已完成 %s", plane, toolName)
+	}
 }
 
 func isAllowedLocalOrigin(r *http.Request) bool {

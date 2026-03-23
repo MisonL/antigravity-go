@@ -9,6 +9,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mison/antigravity-go/internal/agent"
 	"github.com/mison/antigravity-go/internal/session"
 )
 
@@ -173,15 +174,15 @@ var registry = map[string]CommandDefinition{
 
 			switch mode {
 			case "full":
-				m.agent.SetPermissionFunc(func(toolName, args string) bool { return true })
+				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) bool { return true })
 			case "read-only":
-				m.agent.SetPermissionFunc(func(toolName, args string) bool { return false })
+				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) bool { return false })
 			default:
-				m.agent.SetPermissionFunc(func(toolName, args string) bool {
+				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) bool {
 					resChan := make(chan bool)
 					m.permReqChan <- PermissionRequest{
-						ToolName: toolName,
-						Args:     args,
+						ToolName: req.ToolName,
+						Args:     req.Args,
 						Response: resChan,
 					}
 					return <-resChan

@@ -26,7 +26,7 @@ type ProtoField struct {
 }
 
 func main() {
-	fmt.Println("🔍 提取 Protobuf Schema 信息...")
+	fmt.Println("提取 Protobuf Schema 信息...")
 
 	// 1. 使用 strings 提取可能的 proto 定义
 	extractProtoDefinitions()
@@ -39,13 +39,13 @@ func main() {
 }
 
 func extractProtoDefinitions() {
-	fmt.Println("\n📋 提取 Proto 定义...")
+	fmt.Println("\n提取 Proto 定义...")
 
 	// 运行 strings 命令
 	cmd := exec.Command("strings", "./antigravity_core")
 	output, err := cmd.Output()
 	if err != nil {
-		fmt.Printf("❌ 错误: %v\n", err)
+		fmt.Printf("错误: %v\n", err)
 		return
 	}
 
@@ -63,7 +63,12 @@ func extractProtoDefinitions() {
 	for scanner.Scan() {
 		line := scanner.Text()
 		for _, pattern := range protoPatterns {
-			if matched, _ := regexp.MatchString(pattern, line); matched {
+			matched, err := regexp.MatchString(pattern, line)
+			if err != nil {
+				fmt.Printf("正则匹配失败: %v\n", err)
+				continue
+			}
+			if matched {
 				if !protoDefs[line] {
 					protoDefs[line] = true
 					fmt.Printf("  找到: %s\n", line)
@@ -74,13 +79,13 @@ func extractProtoDefinitions() {
 }
 
 func findMetadataProto() {
-	fmt.Println("\n🔍 查找 Metadata 相关的 Proto...")
+	fmt.Println("\n查找 Metadata 相关的 Proto...")
 
 	// 查找包含 metadata 的字符串
 	cmd := exec.Command("strings", "./antigravity_core")
 	output, err := cmd.Output()
 	if err != nil {
-		fmt.Printf("❌ 错误: %v\n", err)
+		fmt.Printf("错误: %v\n", err)
 		return
 	}
 
@@ -96,7 +101,12 @@ func findMetadataProto() {
 	for scanner.Scan() {
 		line := scanner.Text()
 		for _, pattern := range metadataPatterns {
-			if matched, _ := regexp.MatchString(pattern, line); matched {
+			matched, err := regexp.MatchString(pattern, line)
+			if err != nil {
+				fmt.Printf("正则匹配失败: %v\n", err)
+				continue
+			}
+			if matched {
 				if !metadataItems[line] && len(line) < 100 {
 					metadataItems[line] = true
 					fmt.Printf("  找到: %s\n", line)
@@ -107,12 +117,12 @@ func findMetadataProto() {
 }
 
 func extractDescriptor() {
-	fmt.Println("\n📦 尝试提取 Protobuf Descriptor...")
+	fmt.Println("\n尝试提取 Protobuf Descriptor...")
 
 	// 读取二进制文件
 	data, err := os.ReadFile("./antigravity_core")
 	if err != nil {
-		fmt.Printf("❌ 错误: %v\n", err)
+		fmt.Printf("错误: %v\n", err)
 		return
 	}
 
@@ -142,7 +152,7 @@ func extractDescriptor() {
 }
 
 func searchForProtobufMessages(data []byte) {
-	fmt.Println("\n🔬 搜索 Protobuf 消息模式...")
+	fmt.Println("\n搜索 Protobuf 消息模式...")
 
 	// Protobuf varint 编码模式
 	// 查找连续的 varint 编码
@@ -179,7 +189,7 @@ func searchForProtobufMessages(data []byte) {
 
 // 生成示例 Protobuf 消息
 func generateSampleMessage() {
-	fmt.Println("\n🔨 生成示例 Protobuf 消息...")
+	fmt.Println("\n生成示例 Protobuf 消息...")
 
 	// 尝试生成一个简单的 protobuf 消息
 	// 基于我们找到的信息，尝试创建一个 metadata 消息
@@ -198,16 +208,19 @@ func generateSampleMessage() {
 	fmt.Printf("  生成的消息 (hex): %x\n", buf.Bytes())
 
 	// 保存到文件
-	os.WriteFile("sample_metadata.bin", buf.Bytes(), 0644)
+	if err := os.WriteFile("sample_metadata.bin", buf.Bytes(), 0644); err != nil {
+		fmt.Printf("  保存 sample_metadata.bin 失败: %v\n", err)
+		return
+	}
 	fmt.Println("  已保存到 sample_metadata.bin")
 }
 
 // 分析现有的 Antigravity 扩展
 func analyzeAntigravityExtensions() {
-	fmt.Println("\n📂 分析 Antigravity 扩展...")
+	fmt.Println("\n分析 Antigravity 扩展...")
 
 	// 查找扩展目录
-	extensionsDir := os.Getenv("HOME") + "/.antigravity/extensions"
+	extensionsDir := os.Getenv("HOME") + "/.agy_go/extensions"
 	if _, err := os.Stat(extensionsDir); os.IsNotExist(err) {
 		fmt.Printf("  扩展目录不存在: %s\n", extensionsDir)
 		return
@@ -216,7 +229,7 @@ func analyzeAntigravityExtensions() {
 	// 列出扩展
 	entries, err := os.ReadDir(extensionsDir)
 	if err != nil {
-		fmt.Printf("  ❌ 错误: %v\n", err)
+		fmt.Printf("  错误: %v\n", err)
 		return
 	}
 
@@ -240,7 +253,7 @@ func findProtoFiles(dir string) {
 
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".proto") {
-			fmt.Printf("      📄 找到 proto 文件: %s\n", entry.Name())
+			fmt.Printf("      找到 proto 文件: %s\n", entry.Name())
 		}
 		if entry.IsDir() {
 			findProtoFiles(dir + "/" + entry.Name())
@@ -250,5 +263,7 @@ func findProtoFiles(dir string) {
 
 func init() {
 	// 确保在正确的目录
-	os.Chdir("/Volumes/Work/code/antigravity-go")
+	if err := os.Chdir("/Volumes/Work/code/antigravity-go"); err != nil {
+		fmt.Printf("切换目录失败: %v\n", err)
+	}
 }
