@@ -47,6 +47,10 @@ func TestRunAddsDiagnosticsFeedbackAfterCodeEdit(t *testing.T) {
 			},
 			{
 				Role:    llm.RoleAssistant,
+				Content: "PASS\n- auto review ok",
+			},
+			{
+				Role:    llm.RoleAssistant,
 				Content: "done",
 			},
 		},
@@ -62,6 +66,18 @@ func TestRunAddsDiagnosticsFeedbackAfterCodeEdit(t *testing.T) {
 		Execute: func(ctx context.Context, args json.RawMessage) (string, error) {
 			editCalls++
 			return "edit applied", nil
+		},
+	})
+	agt.RegisterTool(tools.Tool{
+		Definition: llm.ToolDefinition{Name: validationToolName},
+		Execute: func(ctx context.Context, args json.RawMessage) (string, error) {
+			return `{"status":"passed"}`, nil
+		},
+	})
+	agt.RegisterTool(tools.Tool{
+		Definition: llm.ToolDefinition{Name: runCommandToolName},
+		Execute: func(ctx context.Context, args json.RawMessage) (string, error) {
+			return "ok", nil
 		},
 	})
 	agt.RegisterTool(tools.Tool{

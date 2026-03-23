@@ -383,6 +383,24 @@ func (ws *WSServer) permissionFuncForConn(conn *websocket.Conn, mode string) age
 			sess.pendingMu.Unlock()
 
 			payload := buildApprovalRequestPayload(req.ToolName, req.Args, ws.workspaceRoot)
+			if strings.TrimSpace(req.Summary) != "" {
+				payload.Summary = req.Summary
+			}
+			if strings.TrimSpace(req.Preview) != "" {
+				if strings.TrimSpace(payload.Preview) != "" {
+					payload.Preview = payload.Preview + "\n\n" + req.Preview
+				} else {
+					payload.Preview = req.Preview
+				}
+			}
+			if len(req.Metadata) > 0 {
+				if payload.Metadata == nil {
+					payload.Metadata = make(map[string]any, len(req.Metadata))
+				}
+				for key, value := range req.Metadata {
+					payload.Metadata[key] = value
+				}
+			}
 			payload.ID = reqID
 			ws.sendJSON(conn, map[string]interface{}{
 				"type": "approval_request",

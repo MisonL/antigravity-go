@@ -445,7 +445,9 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, localCallb
 		callback("start", tc.Name, tc.Args, "")
 	}
 
-	if tool.RequiresPermission && permFunc != nil && !permFunc(PermissionRequest{
+	rollbackPlan := a.prepareRollbackPlan(ctx, tc.Name, tc.Args)
+
+	if tool.RequiresPermission && !requiresPostExecutionApproval(tc.Name) && permFunc != nil && !permFunc(PermissionRequest{
 		ToolName: tc.Name,
 		Args:     tc.Args,
 	}) {
@@ -462,8 +464,11 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, localCallb
 	}
 
 	result, err := tool.Execute(ctx, json.RawMessage(tc.Args))
+	if err == nil {
+		result, err = a.finalizeSensitiveTool(ctx, tc, result, rollbackPlan, callback, permFunc)
+	}
 	if err != nil {
-		result = fmt.Sprintf("Error: %v", err)
+		result = fmt.Sprintf("Error: %v\n\n%s", err, strings.TrimSpace(result))
 	} else if shouldRunCSEFeedback(tc.Name) {
 		result = a.appendCSEFeedback(ctx, tc.Name, result)
 	}
