@@ -139,9 +139,6 @@ func (h *Host) Start() error {
 	}
 	h.stdin.Close() // CRITICAL: Signal initialization end
 
-	// Restore indexing
-	go h.startIndexing()
-
 	return nil
 }
 

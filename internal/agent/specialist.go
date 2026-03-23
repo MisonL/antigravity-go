@@ -87,7 +87,7 @@ func (a *Agent) GetSpecialistTool() tools.Tool {
 				prompt += "\n\nAdditional Context:\n" + params.Context
 			}
 
-			fmt.Printf("👥 Spawning specialist: %s...\n", params.Role)
+			fmt.Printf("Spawning specialist: %s...\n", params.Role)
 
 			// Create sub-agent
 			subAgent := a.CloneWithPrompt(prompt)

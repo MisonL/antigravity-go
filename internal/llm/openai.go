@@ -9,7 +9,9 @@ import (
 
 type OpenAIProvider struct {
 	client    *openai.Client
+	apiKey    string
 	model     string
+	baseURL   string
 	maxTokens int
 }
 
@@ -32,12 +34,16 @@ func NewOpenAIProviderWithOptions(token string, model string, opts OpenAIOptions
 	}
 
 	cfg := openai.DefaultConfig(token)
+	resolvedBaseURL := ""
 	if opts.BaseURL != "" {
-		cfg.BaseURL = normalizeBaseURL(opts.BaseURL)
+		resolvedBaseURL = normalizeBaseURL(opts.BaseURL)
+		cfg.BaseURL = resolvedBaseURL
 	}
 	return &OpenAIProvider{
 		client:    openai.NewClientWithConfig(cfg),
+		apiKey:    token,
 		model:     model,
+		baseURL:   resolvedBaseURL,
 		maxTokens: opts.MaxTokens,
 	}
 }

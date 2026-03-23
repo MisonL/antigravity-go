@@ -172,7 +172,10 @@ func (p *GeminiProvider) parseResponse(resp *genai.GenerateContentResponse) (Mes
 			msg.Content += part.Text
 		}
 		if part.FunctionCall != nil {
-			argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+			argsJSON, err := json.Marshal(part.FunctionCall.Args)
+			if err != nil {
+				return Message{}, fmt.Errorf("marshal function call args: %w", err)
+			}
 			msg.ToolCalls = append(msg.ToolCalls, ToolCall{
 				ID:   part.FunctionCall.Name, // Gemini doesn't have separate ID
 				Name: part.FunctionCall.Name,
@@ -202,7 +205,10 @@ func convertToGeminiSchema(params interface{}) *genai.Schema {
 	if props, ok := paramsMap["properties"].(map[string]interface{}); ok {
 		schema.Properties = make(map[string]*genai.Schema)
 		for name, prop := range props {
-			propMap, _ := prop.(map[string]interface{})
+			propMap, ok := prop.(map[string]interface{})
+			if !ok {
+				continue
+			}
 			propSchema := &genai.Schema{}
 
 			if t, ok := propMap["type"].(string); ok {
