@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { SkeletonCardList, SkeletonRows } from './Skeleton';
+import { useAppDomain } from '../domains/AppDomainContext';
 
 interface McpToolInfo {
   name: string;
@@ -69,6 +71,7 @@ function formatEnvText(env?: Record<string, string>): string {
 }
 
 export function McpPanel({ onClose, token }: McpPanelProps) {
+  const { t } = useAppDomain();
   const [servers, setServers] = useState<McpServerInfo[]>([]);
   const [capabilities, setCapabilities] = useState<McpCapabilities>({});
   const [warning, setWarning] = useState('');
@@ -84,14 +87,14 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
     token ? `?token=${encodeURIComponent(token)}` : ''
   ), [token]);
 
-  async function fetchServers() {
+  const fetchServers = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
       const resp = await fetch(`/api/mcp${suffix}`);
       if (!resp.ok) {
-        throw new Error(`MCP 列表请求失败: ${resp.status}`);
+        throw new Error(`MCP request failed: ${resp.status}`);
       }
 
       const data = await resp.json() as McpResponse;
@@ -99,15 +102,15 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
       setCapabilities(data.capabilities ?? {});
       setWarning(data.warning ?? '');
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : '加载 MCP 配置失败。');
+      setError(fetchError instanceof Error ? fetchError.message : t('mcp.error.fetch'));
     } finally {
       setLoading(false);
     }
-  }
+  }, [suffix, t]);
 
   useEffect(() => {
-    fetchServers();
-  }, [suffix]);
+    void fetchServers();
+  }, [fetchServers]);
 
   async function submitServer(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -126,7 +129,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
         }),
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `保存失败: ${resp.status}`);
+        throw new Error(await resp.text() || `Save failed: ${resp.status}`);
       }
 
       setFormName('');
@@ -135,7 +138,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
       setFormEnv('');
       await fetchServers();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '保存 MCP 配置失败。');
+      setError(submitError instanceof Error ? submitError.message : t('mcp.error.save'));
     } finally {
       setSaving(false);
     }
@@ -152,11 +155,11 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
         body: JSON.stringify({ name }),
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `删除失败: ${resp.status}`);
+        throw new Error(await resp.text() || `Delete failed: ${resp.status}`);
       }
       await fetchServers();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '删除 MCP 服务失败。');
+      setError(deleteError instanceof Error ? deleteError.message : t('mcp.error.delete'));
     } finally {
       setSaving(false);
     }
@@ -173,11 +176,11 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
         body: JSON.stringify({ action: 'restart', name }),
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `重启失败: ${resp.status}`);
+        throw new Error(await resp.text() || `Restart failed: ${resp.status}`);
       }
       await fetchServers();
     } catch (restartError) {
-      setError(restartError instanceof Error ? restartError.message : '重启 MCP 服务失败。');
+      setError(restartError instanceof Error ? restartError.message : t('mcp.error.restart'));
     } finally {
       setSaving(false);
     }
@@ -192,21 +195,27 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="glass-panel modal-content data-modal mcp-modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="glass-panel modal-content data-modal mcp-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mcp-modal-title"
+      >
         <div className="modal-header">
-          <h3>MCP 能力管理</h3>
-          <button type="button" onClick={onClose}>X</button>
+          <h3 id="mcp-modal-title">{t('mcp.title')}</h3>
+          <button type="button" onClick={onClose} aria-label={t('common.close')}>X</button>
         </div>
 
         <div className="data-modal-shell">
           <section className="data-list-panel">
             <div className="data-list-toolbar">
               <div>
-                <div className="data-section-title">服务列表</div>
-                <div className="data-section-subtitle">展示当前内核识别到的 MCP 服务与工具数量</div>
+                <div className="data-section-title">{t('mcp.list.title')}</div>
+                <div className="data-section-subtitle">{t('mcp.list.subtitle')}</div>
               </div>
               <button type="button" className="btn-secondary" onClick={fetchServers} disabled={loading || saving}>
-                刷新
+                {t('common.refresh')}
               </button>
             </div>
 
@@ -218,8 +227,13 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
 
             {warning && <div className="data-state">{warning}</div>}
             {error && <div className="data-state data-state-error">{error}</div>}
-            {loading && servers.length === 0 && <div className="data-state">正在加载 MCP 服务...</div>}
-            {!loading && servers.length === 0 && <div className="data-state">当前没有 MCP 服务。</div>}
+            {loading && servers.length === 0 && (
+              <div className="loading-shell">
+                <div className="data-state">{t('mcp.loading')}</div>
+                <SkeletonCardList cards={3} lines={3} />
+              </div>
+            )}
+            {!loading && servers.length === 0 && <div className="data-state">{t('mcp.empty')}</div>}
 
             <div className="mcp-server-list">
               {servers.map((server) => (
@@ -228,7 +242,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
                     <div>
                       <div className="mcp-server-card__title">{server.name}</div>
                       <div className="mcp-server-card__meta">
-                        {server.command || '未暴露 command'} {server.status ? `| ${server.status}` : ''}
+                        {server.command || t('mcp.command.hidden')} {server.status ? `| ${server.status}` : ''}
                       </div>
                     </div>
                     <span className="badge info">tools: {server.tool_count}</span>
@@ -249,9 +263,9 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
                   )}
 
                   <div className="mcp-server-card__actions">
-                    <button type="button" className="btn-secondary" onClick={() => fillForm(server)}>载入表单</button>
-                    <button type="button" className="btn-secondary" onClick={() => restartServer(server.name)} disabled={saving}>重启</button>
-                    <button type="button" className="btn-secondary btn-danger" onClick={() => deleteServer(server.name)} disabled={saving}>删除</button>
+                    <button type="button" className="btn-secondary" onClick={() => fillForm(server)}>{t('mcp.form.load')}</button>
+                    <button type="button" className="btn-secondary" onClick={() => restartServer(server.name)} disabled={saving}>{t('mcp.action.restart')}</button>
+                    <button type="button" className="btn-secondary btn-danger" onClick={() => deleteServer(server.name)} disabled={saving}>{t('mcp.action.delete')}</button>
                   </div>
                 </article>
               ))}
@@ -261,40 +275,46 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
           <section className="data-detail-panel">
             <div className="data-detail-header">
               <div>
-                <div className="data-section-title">新增或更新服务</div>
-                <div className="data-section-subtitle">通过声明式配置写入 core，并触发动态工具刷新</div>
+                <div className="data-section-title">{t('mcp.form.title')}</div>
+                <div className="data-section-subtitle">{t('mcp.form.subtitle')}</div>
               </div>
             </div>
 
-            <form className="mcp-form" onSubmit={submitServer}>
+            <form className="mcp-form" onSubmit={submitServer} aria-busy={saving}>
+              {loading && servers.length === 0 && <SkeletonRows lines={4} />}
               <label className="form-group">
-                <span>服务名称</span>
-                <input value={formName} onChange={(event) => setFormName(event.target.value)} placeholder="例如 postgres" />
+                <span>{t('mcp.form.name')}</span>
+                <input id="mcp-name" name="mcp-name" value={formName} onChange={(event) => setFormName(event.target.value)} placeholder={t('mcp.form.name.placeholder')} disabled={saving} />
               </label>
 
               <label className="form-group">
-                <span>命令</span>
-                <input value={formCommand} onChange={(event) => setFormCommand(event.target.value)} placeholder="例如 npx" />
+                <span>{t('mcp.form.command')}</span>
+                <input id="mcp-command" name="mcp-command" value={formCommand} onChange={(event) => setFormCommand(event.target.value)} placeholder={t('mcp.form.command.placeholder')} disabled={saving} />
               </label>
 
               <label className="form-group">
-                <span>参数</span>
-                <input value={formArgs} onChange={(event) => setFormArgs(event.target.value)} placeholder="按空格分隔，例如 -y @modelcontextprotocol/server-postgres" />
+                <span>{t('mcp.form.args')}</span>
+                <input id="mcp-args" name="mcp-args" value={formArgs} onChange={(event) => setFormArgs(event.target.value)} placeholder={t('mcp.form.args.placeholder')} disabled={saving} />
               </label>
 
               <label className="form-group">
-                <span>环境变量</span>
+                <span>{t('mcp.form.env')}</span>
                 <textarea
+                  id="mcp-env"
+                  name="mcp-env"
                   value={formEnv}
                   onChange={(event) => setFormEnv(event.target.value)}
-                  placeholder={'一行一个 KEY=VALUE\n例如 DATABASE_URL=postgres://user:pass@host/db'}
+                  placeholder={t('mcp.form.env.placeholder')}
                   rows={8}
+                  disabled={saving}
                 />
               </label>
 
               <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={onClose}>关闭</button>
-                <button type="submit" className="btn-primary" disabled={saving}>保存并刷新工具</button>
+                <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>{t('common.close')}</button>
+                <button type="submit" className={`btn-primary${saving ? ' is-busy' : ''}`} disabled={saving} aria-busy={saving}>
+                  <span>{saving ? t('common.saving') : t('mcp.form.submit')}</span>
+                </button>
               </div>
             </form>
           </section>

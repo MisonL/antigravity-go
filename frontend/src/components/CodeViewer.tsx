@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Editor, { useMonaco, loader } from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+import { SkeletonRows } from './Skeleton';
+import { useAppDomain } from '../domains/AppDomainContext';
 
 // Configure loader to use CDN or local
 loader.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
@@ -11,18 +13,21 @@ interface CodeViewerProps {
 }
 
 export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeAction, lastModified }) => {
+  const { showNotification, t } = useAppDomain();
   const token = (typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('token')?.trim() || ''
     : '');
 
-  const [code, setCode] = useState<string>('// 请选择一个文件进行查看与编辑');
+  const [code, setCode] = useState<string>(t('codeviewer.placeholder.none'));
   const [language, setLanguage] = useState('go');
   const [isDirty, setIsDirty] = useState(false);
+  const [loadingContent, setLoadingContent] = useState(false);
   const [saving, setSaving] = useState(false);
   const [externalChange, setExternalChange] = useState(false);
-  
-  const monaco = useMonaco();
+  const [loadError, setLoadError] = useState('');
+
   const editorRef = useRef<any>(null);
+  const codeRef = useRef(code);
   const currentFileRef = useRef<string | null>(currentFile);
   const isDirtyRef = useRef(false);
   const suppressDirtyOnceRef = useRef(false);
@@ -35,16 +40,22 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
     isDirtyRef.current = isDirty;
   }, [isDirty]);
 
+  useEffect(() => {
+    codeRef.current = code;
+  }, [code]);
+
   // 切换文件：重置编辑状态（只在 currentFile 变化时触发）
   useEffect(() => {
     if (!currentFile) return;
     setSaving(false);
+    setLoadError('');
+    setLoadingContent(true);
     setExternalChange(false);
     setIsDirty(false);
     isDirtyRef.current = false;
     suppressDirtyOnceRef.current = true;
-    setCode('// 加载中…');
-  }, [currentFile]);
+    setCode(t('codeviewer.placeholder.loading'));
+  }, [currentFile, t]);
 
   // Determine language from extension
   useEffect(() => {
@@ -77,7 +88,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
           signal: controller.signal,
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
-        if (!res.ok) throw new Error(`加载失败（${res.status}）`);
+        if (!res.ok) throw new Error(`Load failed (${res.status})`);
         const data = await res.json();
 
         // 防止竞态：请求返回时文件已切换
@@ -85,7 +96,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
 
         const nextContent = typeof data?.content === 'string' ? data.content : '';
 
-        const currentVal = editorRef.current ? String(editorRef.current.getValue() ?? '') : code;
+        const currentVal = editorRef.current ? String(editorRef.current.getValue() ?? '') : codeRef.current;
         if (currentVal === nextContent) {
           setExternalChange(false);
           return;
@@ -102,17 +113,21 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
         setIsDirty(false);
         isDirtyRef.current = false;
         setExternalChange(false);
+        setLoadError('');
 
       } catch (e) {
         if ((e as any)?.name === 'AbortError') return;
-        console.error("加载失败", e);
-        setCode(`// 加载失败：${String(e)}`);
+        const message = t('codeviewer.error.load', String(e));
+        setCode(message);
+        setLoadError(message);
+      } finally {
+        setLoadingContent(false);
       }
     };
 
     fetchContent();
     return () => controller.abort();
-  }, [currentFile, lastModified]); // Depend on lastModified to re-fetch
+  }, [currentFile, lastModified, t, token]); // Depend on lastModified to re-fetch
 
   const handleEditorDidMount = (editor: any, monacoInstance: any) => {
     editorRef.current = editor;
@@ -125,7 +140,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
     // Add Context Menu Action: "Ask AI"
     editor.addAction({
         id: 'ask-ai',
-        label: '询问 AI',
+        label: t('codeviewer.context.ask_ai'),
         contextMenuGroupId: 'navigation',
         contextMenuOrder: 1.5,
         run: (ed: any) => {
@@ -188,12 +203,12 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
               setIsDirty(false);
               isDirtyRef.current = false;
               setExternalChange(false);
-              console.log("Saved.");
+              showNotification(t('codeviewer.save_success'), 'success');
           } else {
-              console.error("保存失败");
+              throw new Error(t('codeviewer.save_error'));
           }
-      } catch (e) {
-          console.error("保存失败", e);
+      } catch {
+          showNotification(t('codeviewer.save_error'), 'error');
       } finally {
           setSaving(false);
       }
@@ -213,22 +228,29 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
   
   const handleReload = () => {
     if (!currentFile) return;
+    setLoadingContent(true);
     setExternalChange(false);
     fetch(`/api/fs/content?path=${encodeURIComponent(currentFile)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
       .then(async (r) => {
-        if (!r.ok) throw new Error(`加载失败（${r.status}）`);
+        if (!r.ok) throw new Error(`Load failed (${r.status})`);
         return r.json();
       })
       .then((d) => {
         suppressDirtyOnceRef.current = true;
         setCode(typeof d?.content === 'string' ? d.content : '');
+        setLoadError('');
         setIsDirty(false); // 接受磁盘版本，重置 dirty
         isDirtyRef.current = false;
       })
-      .catch((e) => {
-        console.error("重新加载失败", e);
+      .catch((error) => {
+        const message = t('codeviewer.error.load', String(error));
+        setCode(message);
+        setLoadError(message);
+      })
+      .finally(() => {
+        setLoadingContent(false);
       });
   };
 
@@ -236,8 +258,8 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
       return (
           <div className="codeviewer-empty">
               <div className="codeviewer-empty__inner">
-                  <div className="codeviewer-empty__icon">⚛️</div>
-                  <div>选择一个文件开始编辑</div>
+                  <div className="codeviewer-empty__icon">AG</div>
+                  <div>{t('codeviewer.empty')}</div>
               </div>
           </div>
       );
@@ -245,6 +267,12 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
 
   return (
     <div className="codeviewer">
+        {loadingContent && (
+          <div className="codeviewer-loading">
+            <div className="data-state">{t('common.loading')}</div>
+            <SkeletonRows lines={8} />
+          </div>
+        )}
         <Editor
             height="100%"
             language={language}
@@ -264,14 +292,15 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
         />
         {/* Status Overlay */}
         <div className="codeviewer-status">
-            {isDirty && <span className="status-pill status-pill--warn">未保存</span>}
-            {saving && <span className="status-pill status-pill--info">保存中…</span>}
+            {loadError && <span className="status-pill status-pill--danger">{loadError}</span>}
+            {isDirty && <span className="status-pill status-pill--warn">{t('codeviewer.status.unsaved')}</span>}
+            {saving && <span className="status-pill status-pill--info">{t('codeviewer.status.saving')}</span>}
             {externalChange && (
                 <button 
                   onClick={handleReload}
                   className="status-pill status-pill--danger"
                 >
-                    文件已在磁盘变更（点击重新加载）
+                    {t('codeviewer.status.external_change')}
                 </button>
             )}
         </div>

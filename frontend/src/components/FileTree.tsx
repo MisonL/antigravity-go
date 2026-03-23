@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import { 
   Folder, FolderOpen, File, FileCode, FileJson, 
   FileText, ChevronRight, ChevronDown 
 } from 'lucide-react';
+import { SkeletonRows } from './Skeleton';
+import { useAppDomain } from '../domains/AppDomainContext';
 
 interface FileNode {
   name: string;
@@ -15,7 +17,7 @@ interface FileTreeProps {
   onSelectFile: (path: string) => void;
 }
 
-const FileIcon = ({ name }: { name: string }) => {
+const FileIcon = memo(function FileIcon({ name }: { name: string }) {
   const style: React.CSSProperties = { color: "rgba(16,24,40,0.55)" };
   if (name.endsWith('.go')) style.color = "#0ea5e9";
   else if (name.endsWith('.ts') || name.endsWith('.tsx')) style.color = "#2563eb";
@@ -29,9 +31,9 @@ const FileIcon = ({ name }: { name: string }) => {
     return <FileCode size={16} style={style} />;
   }
   return <File size={16} style={style} />;
-};
+});
 
-const TreeNode = ({
+const TreeNode = memo(function TreeNode({
   node,
   level,
   onSelect,
@@ -43,19 +45,9 @@ const TreeNode = ({
   onSelect: (path: string) => void;
   onLoadChildren: (path: string) => void;
   isLoadingPath: (path: string) => boolean;
-}) => {
+}) {
+  const { t } = useAppDomain();
   const [isOpen, setIsOpen] = useState(false);
-  
-  const handleToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (node.type === 'dir') {
-      const next = !isOpen;
-      setIsOpen(next);
-      if (next && node.children == null) {
-        onLoadChildren(node.path);
-      }
-    }
-  };
 
   const handleClick = () => {
     if (node.type === 'file') {
@@ -69,12 +61,23 @@ const TreeNode = ({
     }
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleClick();
+    }
+  };
+
   return (
     <div>
       <div 
         className="filetree-node"
         style={{ paddingLeft: 10 + level * 16 }}
         onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role="treeitem"
+        aria-expanded={node.type === 'dir' ? isOpen : undefined}
+        tabIndex={0}
       >
         {node.type === 'dir' && (
           <span className="filetree-chevron">
@@ -88,11 +91,11 @@ const TreeNode = ({
         )}
         <span className="filetree-name">{node.name}</span>
         {node.type === 'dir' && isOpen && isLoadingPath(node.path) && (
-          <span className="filetree-loading">加载中…</span>
+          <span className="filetree-loading">{t('filetree.loading')}</span>
         )}
       </div>
       {isOpen && node.children && (
-        <div className="filetree-children"> 
+        <div className="filetree-children" role="group"> 
           {node.children.map((child) => (
             <TreeNode
               key={child.path}
@@ -107,9 +110,10 @@ const TreeNode = ({
       )}
     </div>
   );
-};
+});
 
 export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
+  const { t } = useAppDomain();
   const token = (typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('token')?.trim() || ''
     : '');
@@ -152,7 +156,7 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
       const children = dirNode.children ?? [];
       setRoot((prev) => (prev ? setChildrenByPath(prev, path, children) : prev));
     } catch (e) {
-      console.error("Failed to load directory", e);
+      setError(e instanceof Error && e.message.trim() ? e.message : t('filetree.error'));
     } finally {
       setLoadingPaths((p) => {
         const next = { ...p };
@@ -160,7 +164,7 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
         return next;
       });
     }
-  }, [apiFetchTree, loadingPaths, root, setChildrenByPath]);
+  }, [apiFetchTree, loadingPaths, root, setChildrenByPath, t]);
 
   useEffect(() => {
     apiFetchTree(".")
@@ -169,21 +173,30 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
         setLoading(false);
       })
       .catch((err) => {
-        console.error("Failed to load file tree", err);
-        setError("加载文件树失败");
+        setError(err instanceof Error && err.message.trim() ? err.message : t('filetree.error'));
         setLoading(false);
       });
-  }, [apiFetchTree]);
+  }, [apiFetchTree, t]);
 
   const isLoadingPath = useCallback((path: string) => loadingPaths[path] === true, [loadingPaths]);
 
-  if (loading) return <div className="filetree-state">正在加载工作区…</div>;
+  if (loading) {
+    return (
+      <div className="filetree">
+        <h3 className="filetree-title">{t('filetree.title')}</h3>
+        <div className="loading-shell">
+          <div className="filetree-state">{t('filetree.workspace_loading')}</div>
+          <SkeletonRows lines={6} />
+        </div>
+      </div>
+    );
+  }
   if (error) return <div className="filetree-state filetree-state--error">{error}</div>;
   if (!root) return null;
 
   return (
-    <div className="filetree">
-      <h3 className="filetree-title">资源管理器</h3>
+    <div className="filetree" role="tree" aria-label={t('filetree.title')}>
+      <h3 className="filetree-title">{t('filetree.title')}</h3>
       <TreeNode
         node={root}
         level={0}

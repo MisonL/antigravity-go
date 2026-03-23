@@ -1,4 +1,6 @@
 import { formatValue, JsonRecord, pickString, TrajectoryStepSummary, TrajectorySummary } from './planeData';
+import { SkeletonCardList, SkeletonRows } from './Skeleton';
+import { useAppDomain } from '../domains/AppDomainContext';
 
 interface TrajectoryModalProps {
   detailError: string;
@@ -8,8 +10,12 @@ interface TrajectoryModalProps {
   listError: string;
   onClose: () => void;
   onRefresh: () => void;
+  onResume: (id: string) => void;
   onRollback: (stepId: string) => void;
   onSelect: (id: string) => void;
+  resumeError: string;
+  resumeLoadingId: string;
+  resumeSuccess: string;
   rollbackError: string;
   rollbackStepId: string;
   rollbackSuccess: string;
@@ -30,8 +36,12 @@ export function TrajectoryModal({
   listError,
   onClose,
   onRefresh,
+  onResume,
   onRollback,
   onSelect,
+  resumeError,
+  resumeLoadingId,
+  resumeSuccess,
   rollbackError,
   rollbackStepId,
   rollbackSuccess,
@@ -39,12 +49,21 @@ export function TrajectoryModal({
   selectedId,
   steps,
 }: TrajectoryModalProps) {
+  const { t } = useAppDomain();
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="glass-panel modal-content data-modal" data-testid="trajectory-modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="glass-panel modal-content data-modal"
+        data-testid="trajectory-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trajectory-modal-title"
+      >
         <div className="modal-header">
-          <h3>轨迹树</h3>
-          <button type="button" onClick={onClose}>
+          <h3 id="trajectory-modal-title">{t('trajectory.title')}</h3>
+          <button type="button" onClick={onClose} aria-label={t('common.close')}>
             X
           </button>
         </div>
@@ -52,50 +71,71 @@ export function TrajectoryModal({
         <div className="data-modal-shell">
           <section className="data-list-panel">
             <div className="data-list-toolbar">
-              <div>
-                <div className="data-section-title">轨迹列表</div>
-                <div className="data-section-subtitle">点击记录查看详情</div>
+            <div>
+                <div className="data-section-title">{t('trajectory.list.title')}</div>
+                <div className="data-section-subtitle">{t('trajectory.list.subtitle')}</div>
               </div>
               <button type="button" className="btn-secondary" onClick={onRefresh} disabled={isLoading}>
-                刷新
+                {t('common.refresh')}
               </button>
             </div>
 
             <div className="data-list" data-testid="trajectory-list">
-              {isLoading && items.length === 0 && <div className="data-state">正在加载轨迹数据...</div>}
+              {isLoading && items.length === 0 && (
+                <div className="loading-shell">
+                  <div className="data-state">{t('trajectory.loading')}</div>
+                  <SkeletonCardList cards={4} lines={3} />
+                </div>
+              )}
               {!isLoading && listError && <div className="data-state data-state-error">{listError}</div>}
-              {!isLoading && !listError && items.length === 0 && <div className="data-state">暂无轨迹数据。</div>}
+              {!isLoading && !listError && items.length === 0 && <div className="data-state">{t('trajectory.empty')}</div>}
 
               {items.map((item) => (
-                <button
+                <div
                   key={item.id}
-                  type="button"
                   className={`data-list-item ${selectedId === item.id ? 'active' : ''}`}
-                  onClick={() => onSelect(item.id)}
                 >
-                  <div className="data-list-item-header">
-                    <span className="data-list-item-title">{item.id}</span>
-                    <span className="badge info">{item.status}</span>
-                  </div>
-                  {item.title && <div className="data-list-item-summary">{item.title}</div>}
-                  {item.updatedAt && <div className="data-list-item-meta">{item.updatedAt}</div>}
-                </button>
+                  <button type="button" className="data-list-item-select" onClick={() => onSelect(item.id)}>
+                    <div className="data-list-item-header">
+                      <span className="data-list-item-title">{item.id}</span>
+                      <span className="badge info">{item.status}</span>
+                    </div>
+                    {item.title && <div className="data-list-item-summary">{item.title}</div>}
+                    {item.updatedAt && <div className="data-list-item-meta">{item.updatedAt}</div>}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary trajectory-resume-button"
+                    onClick={() => onResume(item.id)}
+                    disabled={resumeLoadingId === item.id}
+                  >
+                    {resumeLoadingId === item.id ? t('trajectory.resuming') : t('trajectory.resume')}
+                  </button>
+                </div>
               ))}
             </div>
+            {resumeError && <div className="data-list-toolbar"><div className="data-state data-state-error">{resumeError}</div></div>}
+            {resumeSuccess && <div className="data-list-toolbar"><div className="data-state data-state-success">{resumeSuccess}</div></div>}
           </section>
 
           <section className="data-detail-panel" data-testid="trajectory-detail">
             <div className="data-detail-header">
               <div>
-                <div className="data-section-title">轨迹详情</div>
-                <div className="data-section-subtitle">核心字段与原始 JSON</div>
+                <div className="data-section-title">{t('trajectory.detail.title')}</div>
+                <div className="data-section-subtitle">{t('trajectory.detail.subtitle')}</div>
               </div>
             </div>
 
             <div className="data-detail-body">
-              {detailLoading && <div className="data-state">正在加载轨迹详情...</div>}
+              {detailLoading && (
+                <div className="loading-shell">
+                  <div className="data-state">{t('trajectory.detail.loading')}</div>
+                  <SkeletonRows lines={4} />
+                  <SkeletonCardList cards={2} lines={2} />
+                </div>
+              )}
               {!detailLoading && detailError && <div className="data-state data-state-error">{detailError}</div>}
-              {!detailLoading && !detailError && !selectedDetail && <div className="data-state">请选择一条轨迹记录。</div>}
+              {!detailLoading && !detailError && !selectedDetail && <div className="data-state">{t('trajectory.detail.empty')}</div>}
 
               {!detailLoading && !detailError && selectedDetail && (
                 <>
@@ -107,17 +147,17 @@ export function TrajectoryModal({
                       </span>
                     </div>
                     <div className="data-field">
-                      <span className="data-field-label">状态</span>
+                      <span className="data-field-label">{t('trajectory.field.status')}</span>
                       <span className="data-field-value">{renderDetailValue(selectedDetail, ['status', 'state'])}</span>
                     </div>
                     <div className="data-field">
-                      <span className="data-field-label">标题</span>
+                      <span className="data-field-label">{t('trajectory.field.title')}</span>
                       <span className="data-field-value">
                         {renderDetailValue(selectedDetail, ['title', 'name', 'summary', 'description'])}
                       </span>
                     </div>
                     <div className="data-field">
-                      <span className="data-field-label">更新时间</span>
+                      <span className="data-field-label">{t('trajectory.field.updated_at')}</span>
                       <span className="data-field-value">
                         {renderDetailValue(selectedDetail, ['updated_at', 'updatedAt', 'created_at', 'createdAt', 'timestamp'])}
                       </span>
@@ -125,8 +165,8 @@ export function TrajectoryModal({
                   </div>
 
                   <div className="data-json-block">
-                    <div className="data-section-title">轨迹步骤</div>
-                    {steps.length === 0 && <div className="data-state">当前轨迹未暴露可回滚步骤。</div>}
+                    <div className="data-section-title">{t('trajectory.steps')}</div>
+                    {steps.length === 0 && <div className="data-state">{t('trajectory.steps.empty')}</div>}
                     {steps.length > 0 && (
                       <div className="trajectory-step-list">
                         {steps.map((step) => (
@@ -145,7 +185,7 @@ export function TrajectoryModal({
                               onClick={() => onRollback(step.id)}
                               disabled={rollbackStepId === step.id}
                             >
-                              {rollbackStepId === step.id ? '回滚中...' : '回滚到此步骤'}
+                              {rollbackStepId === step.id ? t('trajectory.rolling_back') : t('trajectory.rollback')}
                             </button>
                           </div>
                         ))}
@@ -157,7 +197,7 @@ export function TrajectoryModal({
                   </div>
 
                   <div className="data-json-block">
-                    <div className="data-section-title">原始 JSON</div>
+                    <div className="data-section-title">{t('trajectory.raw_json')}</div>
                     <pre className="data-json">{formatValue(selectedDetail)}</pre>
                   </div>
                 </>
