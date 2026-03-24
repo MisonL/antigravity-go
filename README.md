@@ -8,8 +8,9 @@
 Antigravity Go 是一个利用 `antigravity_core` 作为感知层、通过 Go 宿主进程实现任务编排的实验性 IDE 工作台。
 
 ## 2. 核心架构与能力 (CSE Enabled)
-- **内核宿主 (Host)**: 自动化管理 `antigravity_core` 生命周期，支持 RPC Heartbeat 主动探测。
-- **自愈式索引 (Hybrid Indexer)**: 具备架构自感知能力，支持高性能 `fd` 与原生 `Walk` 动态切换。
+- **内核宿主 (Host)**: 自动化管理 `antigravity_core` 生命周期，支持 RPC Heartbeat 主动探测、端口发现与日志回放。
+- **工业级 RPC 鲁棒性**: 数据面接口对废弃或缺失的 Plane RPC 走显式兼容分支，Web 控制台可稳定返回空态而不是静默崩溃。
+- **任务账本与可观测性**: 统一暴露任务摘要、轨迹、记忆、MCP 状态与回滚入口，便于产品化验收和问题追溯。
 - **闭环执行 (Feedback Loop)**: 实现“应用补丁 -> 自动诊断 -> 决策修正”的闭环，Agent 具备自校正能力。
 - **视觉与项目感知**: 适配内核原生视觉接口（Screenshot）与项目级元数据统计。
 
@@ -34,7 +35,20 @@ make update-core
 # 启动 Web 控制台 (默认端口 8888)
 make run
 ```
-配置与数据默认存储于 `~/.agy_go` 目录。您可以通过 Web UI 的 **⚙️ 设置** 按钮动态调整 AI 渠道。
+配置与数据默认存储于 `~/.agy_go` 目录。您可以通过 Web UI 的“设置”入口动态调整 AI 渠道。
+
+### 前端环境
+当前前端基线为 `Bun 1.3.9 + Vite 8 + React 19 + TypeScript 5.9`。标准构建链路如下：
+```bash
+bun install
+bun run build
+```
+`make build` 会先执行上述前端构建，再将产物同步到 `internal/server/dist` 供 Go 服务嵌入。
+
+### Web UI 规范
+- 控制台遵循 `Commander Paradigm 2.0`。
+- 所有面板、按钮、徽标与输入框统一使用 `0px` 圆角设计语言。
+- Data Plane / Control Plane / Observability 三类面板共享同一套状态反馈与空态组件。
 
 如果您需要深入了解本项目的底层机制，请查阅以下文档：
 - [产品设计 (Product Design)](docs/PRODUCT_DESIGN.md): 项目定义、核心目标与技术栈说明。

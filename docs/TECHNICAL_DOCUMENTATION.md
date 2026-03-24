@@ -104,6 +104,6 @@ Agent 基于消息队列实现多轮对话：
 
 #### 7. 实验性功能动态审计 (Feature Auditing)
 - **状态探测**: 在 `agy doctor` 执行期间，系统会调用内核的 `/GetStaticExperimentStatus` 接口。
-- **开关映射**: 该实现通过遍历内核返回的 `Experiments` 数组，将复杂的内部 Feature Key 映射为直观的 ✅/❌ 状态，帮助开发者确认如 `CASCADE_V2` 等核心推理引擎是否已在当前内核版本中激活。
+- **开关映射**: 该实现通过遍历内核返回的 `Experiments` 数组，将复杂的内部 Feature Key 映射为清晰的启用/禁用状态，帮助开发者确认如 `CASCADE_V2` 等核心推理引擎是否已在当前内核版本中激活。
 
 ## 7. 运维与升级
