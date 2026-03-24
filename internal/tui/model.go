@@ -257,12 +257,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.textarea.SetWidth(msg.Width - 4)
+
+		vHeight := msg.Height - 15
+		if vHeight < 1 {
+			vHeight = 1
+		}
+
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width-4, msg.Height-15)
+			m.viewport = viewport.New(msg.Width-4, vHeight)
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width - 4
-			m.viewport.Height = msg.Height - 15
+			m.viewport.Height = vHeight
 		}
 		m.viewport.SetContent(strings.Join(m.messages, ""))
 		m.viewport.GotoBottom()

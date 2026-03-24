@@ -70,6 +70,19 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.Quitting = true
 			return m, tea.Quit
+		case tea.KeyShiftTab:
+			if m.step > stepProvider {
+				m.step--
+				switch m.step {
+				case stepProvider:
+					m.providerInput.Focus()
+				case stepAPIKey:
+					m.keyInput.Focus()
+				case stepBaseURL:
+					m.urlInput.Focus()
+				}
+				return m, textinput.Blink
+			}
 		case tea.KeyEnter:
 			switch m.step {
 			case stepProvider:

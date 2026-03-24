@@ -109,5 +109,5 @@
   "tui.setup.step.key": "步骤 2: 输入 API 密钥 (API Key)\n",
   "tui.setup.step.url": "步骤 3: 配置接口地址 (Base URL)\n",
   "tui.setup.step.url.hint": "(留空使用官方默认地址)\n",
-  "tui.setup.exit_hint": "\n\n(Esc 退出)\n"
+  "tui.setup.exit_hint": "\n\n(Esc 退出 / Shift+Tab 返回)\n"
 }

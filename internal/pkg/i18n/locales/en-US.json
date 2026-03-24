@@ -109,5 +109,5 @@
   "tui.setup.step.key": "Step 2: Enter the API key\n",
   "tui.setup.step.url": "Step 3: Configure the Base URL\n",
   "tui.setup.step.url.hint": "(Leave empty to use the official default)\n",
-  "tui.setup.exit_hint": "\n\n(Press Esc to quit)\n"
+  "tui.setup.exit_hint": "\n\n(Esc to quit / Shift+Tab to back)\n"
 }

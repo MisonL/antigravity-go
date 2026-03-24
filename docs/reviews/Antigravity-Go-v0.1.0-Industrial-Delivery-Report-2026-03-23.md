@@ -1,4 +1,4 @@
-# Antigravity-Go v1.50 工业级交付报告
+# Antigravity-Go v0.1.0 工业级交付报告
 
 日期: 2026-03-23
 
