@@ -389,7 +389,7 @@ export function ChatWorkspace({
         <div className="chat-messages" aria-live="polite">
           {chat.chatMessages.length === 0 ? (
             <div className="welcome-screen">
-              <div className="welcome-kicker">Antigravity Go</div>
+              <div className="welcome-kicker">Antigravity-Go</div>
               <div className="welcome-screen__scoreboard">
                 <ScoreboardPanel error={scoreboardError} summary={scoreboardSummary} />
               </div>

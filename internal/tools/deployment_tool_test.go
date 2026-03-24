@@ -13,13 +13,13 @@ func TestDeployProjectToolWritesDeploymentArtifacts(t *testing.T) {
 	workspace := t.TempDir()
 	writeTestFile(t, filepath.Join(workspace, "go.mod"), "module example.com/app\n\ngo 1.24.0\n")
 	writeTestFile(t, filepath.Join(workspace, "go.sum"), "")
-	writeTestFile(t, filepath.Join(workspace, "cmd", "agy", "main.go"), "package main\nfunc main() {}\n")
+	writeTestFile(t, filepath.Join(workspace, "cmd", "ago", "main.go"), "package main\nfunc main() {}\n")
 	writeTestFile(t, filepath.Join(workspace, "frontend", "package.json"), `{"scripts":{"build":"vite build"}}`)
 	writeTestFile(t, filepath.Join(workspace, "frontend", "package-lock.json"), "{}")
 
 	tool := NewDeployProjectTool()
 	ctx := WithWorkspaceContext(context.Background(), WorkspaceContext{Root: workspace})
-	raw, err := tool.Execute(ctx, []byte(`{"environment":"production","image_repository":"ghcr.io/acme/agy","image_tag":"v1.5.0"}`))
+	raw, err := tool.Execute(ctx, []byte(`{"environment":"production","image_repository":"ghcr.io/acme/ago","image_tag":"v1.5.0"}`))
 	if err != nil {
 		t.Fatalf("tool returned error: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestDeployProjectToolWritesDeploymentArtifacts(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		t.Fatalf("failed to decode tool result: %v", err)
 	}
-	if result.ImageRef != "ghcr.io/acme/agy:v1.5.0" {
+	if result.ImageRef != "ghcr.io/acme/ago:v1.5.0" {
 		t.Fatalf("unexpected image ref: %q", result.ImageRef)
 	}
 	if !strings.Contains(result.ComposeCommand, "docker compose -f docker-compose.yml up -d --build") {
@@ -49,7 +49,7 @@ func TestDeployProjectToolCanWriteWorkflowWhenRequested(t *testing.T) {
 	workspace := t.TempDir()
 	writeTestFile(t, filepath.Join(workspace, "go.mod"), "module example.com/app\n\ngo 1.24.0\n")
 	writeTestFile(t, filepath.Join(workspace, "go.sum"), "")
-	writeTestFile(t, filepath.Join(workspace, "cmd", "agy", "main.go"), "package main\nfunc main() {}\n")
+	writeTestFile(t, filepath.Join(workspace, "cmd", "ago", "main.go"), "package main\nfunc main() {}\n")
 
 	tool := NewDeployProjectTool()
 	ctx := WithWorkspaceContext(context.Background(), WorkspaceContext{Root: workspace})

@@ -59,7 +59,7 @@ function LayoutShell() {
         <div className="command-hud__brand">
           <span className="logo-mark">AG</span>
           <div className="command-hud__brand-copy">
-            <h1>Antigravity <span className="highlight">{t('app.title.suffix')}</span></h1>
+            <h1>Antigravity-Go <span className="highlight">{t('app.title.suffix')}</span></h1>
             <p className="logo-subtitle">{t('app.header.subtitle')}</p>
           </div>
           <div className="command-hud__status-cluster" aria-label={t('app.control_plane.title')}>

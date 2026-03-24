@@ -155,7 +155,7 @@ func TestHandleMCPPostUpsertsServerAndSendsOverrideConfig(t *testing.T) {
 						"command": "npx",
 						"args":    []interface{}{"-y", "@modelcontextprotocol/server-filesystem", "/tmp/workspace"},
 						"env": map[string]interface{}{
-							"AGY_ENV": "prod",
+							"AGO_ENV": "prod",
 						},
 					},
 				},
@@ -184,7 +184,7 @@ func TestHandleMCPPostUpsertsServerAndSendsOverrideConfig(t *testing.T) {
 		"name":" filesystem ",
 		"command":" npx ",
 		"args":["-y","@modelcontextprotocol/server-filesystem","/tmp/workspace"],
-		"env":{"AGY_ENV":"prod"}
+		"env":{"AGO_ENV":"prod"}
 	}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
@@ -233,7 +233,7 @@ func TestHandleMCPPostUpsertsServerAndSendsOverrideConfig(t *testing.T) {
 	if len(spec.Args) != 3 {
 		t.Fatalf("unexpected args: %+v", spec.Args)
 	}
-	if spec.Env["AGY_ENV"] != "prod" {
+	if spec.Env["AGO_ENV"] != "prod" {
 		t.Fatalf("unexpected env: %+v", spec.Env)
 	}
 }

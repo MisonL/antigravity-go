@@ -69,7 +69,7 @@ func loadBundle() (*Bundle, error) {
 
 func DetectLocale() string {
 	for _, candidate := range []string{
-		os.Getenv("AGY_LOCALE"),
+		os.Getenv("AGO_LOCALE"),
 		os.Getenv("LC_ALL"),
 		os.Getenv("LC_MESSAGES"),
 		os.Getenv("LANG"),

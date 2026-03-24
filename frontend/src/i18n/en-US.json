@@ -1,5 +1,5 @@
 {
-  "app.title.suffix": "Console",
+  "app.title.suffix": "AGo",
   "app.header.subtitle": "Phase 6B Domain Shell",
   "app.action.trajectory": "Trajectories",
   "app.action.memory": "Memory",
@@ -89,7 +89,7 @@
   "chat.logs.empty": "Waiting for system logs.",
   "chat.prompt.project_map": "Please summarize the project structure with get_project_summary and explain the key modules.",
   "chat.prompt.risk_review": "Please review the internal/agent package and identify potential bugs, boundary conditions, and concurrency risks.",
-  "chat.prompt.architecture": "Please explain the overall architecture and key data flow based on cmd/agy/main.go.",
+  "chat.prompt.architecture": "Please explain the overall architecture and key data flow based on cmd/ago/main.go.",
   "approval.title": "Waiting for Approval",
   "approval.meta.tool": "Tool",
   "approval.meta.category": "Category",

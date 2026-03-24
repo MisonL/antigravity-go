@@ -1,4 +1,4 @@
-# Antigravity Go - Phase 2 演进蓝图 (Core-First Evolution)
+# Antigravity-Go - Phase 2 演进蓝图 (Core-First Evolution)
 
 ## 战略目标
 将系统从“工具驱动”升级为“内核托管”，实现对标 Claude Code 的沉浸式交互、Gemini CLI 的长效记忆以及 Codex 的事务化编辑。

@@ -1,4 +1,4 @@
-# Antigravity Go - Phase 4 多智能体编排与自愈循环 (Orchestration & Auto-Healing)
+# Antigravity-Go - Phase 4 多智能体编排与自愈循环 (Orchestration & Auto-Healing)
 
 ## 战略目标
 从“单体 Agent”向“多智能体协作（Multi-Agent System）”演进。引入生成者（Maker）与审查者（Checker）的内部对弈机制，并在正式向人类发起审批前，实现自动化的代码质量把关与测试自愈。
@@ -17,8 +17,8 @@
 
 ## 3. 工作流指令扩展 (Workflow CLI) [优先级：中]
 - [ ] **新增子命令**: 
-  - `agy review`：仅执行代码审查任务，不直接修改代码。
-  - `agy auto-fix`：扫描当前目录的编译错误或 Lint 警告，并自动进入“生成->测试->自愈”循环。
+  - `ago review`：仅执行代码审查任务，不直接修改代码。
+  - `ago auto-fix`：扫描当前目录的编译错误或 Lint 警告，并自动进入“生成->测试->自愈”循环。
 
 ---
 *注：本项目坚持 CSE 闭环工程理念，引入多智能体是为了降低人类审批时的负担，提高自动化补丁的首次通过率（First-time Pass Rate）。*

@@ -14,11 +14,11 @@ frontend:
 
 # Build backend
 backend:
-	go build -o agy ./cmd/agy
+	go build -o ago ./cmd/ago
 
 # Clean build artifacts
 clean:
-	rm -f agy
+	rm -f ago
 	rm -rf internal/server/dist
 	rm -rf frontend/dist
 
@@ -28,4 +28,4 @@ update-core:
 
 # Run locally in web mode
 run: build
-	./agy --web --no-tui
+	./ago --web --no-tui

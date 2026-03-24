@@ -27,9 +27,9 @@ type Config struct {
 func defaultDataDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
-		return ".agy_go"
+		return ".ago"
 	}
-	return filepath.Join(home, ".agy_go")
+	return filepath.Join(home, ".ago")
 }
 
 func normalizeDataDir(dataDir string) string {
@@ -63,7 +63,7 @@ func DefaultConfig() *Config {
 }
 
 // Load reads the config file from default location or specific path
-// Default location: ~/.agy_go/config.yaml
+// Default location: ~/.ago/config.yaml
 func Load() (*Config, error) {
 	return LoadFromDataDir("")
 }

@@ -248,7 +248,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// 1. Check for cookie
-		cookie, _ := r.Cookie("agy_token")
+		cookie, _ := r.Cookie("ago_token")
 		token := ""
 		if cookie != nil {
 			token = cookie.Value
@@ -278,7 +278,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		// If we have a valid token (not from header), set/refresh cookie
 		if s.authToken != "" && token != "" && token != expected {
 			http.SetCookie(w, &http.Cookie{
-				Name:     "agy_token",
+				Name:     "ago_token",
 				Value:    token,
 				Path:     "/",
 				HttpOnly: false, // Allow JS to see it if needed, but primarily for browser requests

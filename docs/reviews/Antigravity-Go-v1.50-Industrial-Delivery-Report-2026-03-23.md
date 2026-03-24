@@ -1,4 +1,4 @@
-# Antigravity Go v1.50 工业级交付报告
+# Antigravity-Go v1.50 工业级交付报告
 
 日期: 2026-03-23
 
@@ -9,7 +9,7 @@
 - 部署执行器补齐：`internal/tools/deployment.go` 现可基于当前工作区生成 production-ready `Dockerfile`、`.dockerignore`、`docker-compose.yml`，并保留 GitHub Actions 工作流导出能力。
 - Agent 部署工具补齐：新增 `deploy_project` 工具，默认写入部署工件，可选写入 `.github/workflows/deploy.yml`。
 - 前端大 Diff 性能收口：`frontend/src/components/ApprovalModal.tsx` 对超过 2000 行的 Diff 默认折叠未修改上下文，并对预览区和 chunk 列表启用分批渲染。
-- 启动自愈补齐：`cmd/agy/main.go` 增加环境自检；检测到配置文件损坏或数据目录异常时，显式阻断并提供 `--safe-start` / `--auto-repair` 两条恢复路径。
+- 启动自愈补齐：`cmd/ago/main.go` 增加环境自检；检测到配置文件损坏或数据目录异常时，显式阻断并提供 `--safe-start` / `--auto-repair` 两条恢复路径。
 - Self-Evolving 回归补齐：新增 `internal/server/self_evolving_test.go`，验证 Agent 可通过并行 worker 生成两处修改，并通过 chunk approval 完成最终落盘。
 
 ## 2. 核心性能指标
@@ -37,10 +37,10 @@
 - Web 暴露边界：
   - 服务端仍默认只允许回环地址监听。
   - 若监听 `0.0.0.0` / `::`，必须显式提供 token。
-  - 生成的 `docker-compose.yml` 强制要求 `AGY_WEB_TOKEN`。
+  - 生成的 `docker-compose.yml` 强制要求 `AGO_WEB_TOKEN`。
 - 容器运行边界：
   - 生成的 compose 将 `antigravity_core` 以只读挂载方式注入：`./deploy/runtime/antigravity_core:/opt/antigravity/bin/antigravity_core:ro`。
-  - 运行数据卷独立挂载到 `agy-data:/var/lib/agy`，避免容器内状态与工作区源代码混写。
+  - 运行数据卷独立挂载到 `ago-data:/var/lib/ago`，避免容器内状态与工作区源代码混写。
 - 自愈边界：
   - `--safe-start` 使用隔离数据目录启动，不直接触碰原损坏数据。
   - `--auto-repair` 先备份损坏路径到 `.bak-时间戳`，再重建最小可运行配置与目录结构。
@@ -52,7 +52,7 @@
 - 部署工具链定向测试：
   - `go test ./internal/tools`
 - 启动自愈与 CLI 定向测试：
-  - `go test ./cmd/agy`
+  - `go test ./cmd/ago`
 - 审批与 Self-Evolving 定向测试：
   - `go test ./internal/server`
   - `go test -run TestSelfEvolvingParallelWorkersSupportChunkApproval ./internal/server`

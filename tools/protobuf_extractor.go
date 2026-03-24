@@ -220,7 +220,7 @@ func analyzeAntigravityExtensions() {
 	fmt.Println("\n分析 Antigravity 扩展...")
 
 	// 查找扩展目录
-	extensionsDir := os.Getenv("HOME") + "/.agy_go/extensions"
+	extensionsDir := os.Getenv("HOME") + "/.ago/extensions"
 	if _, err := os.Stat(extensionsDir); os.IsNotExist(err) {
 		fmt.Printf("  扩展目录不存在: %s\n", extensionsDir)
 		return

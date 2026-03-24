@@ -2,7 +2,7 @@
 
 ## 目标
 
-本阶段为 Antigravity Go 增加一条可审计的 MCP 扩展链路，覆盖：
+本阶段为 Antigravity-Go (AGo) 增加一条可审计的 MCP 扩展链路，覆盖：
 
 - 内核 MCP 写操作能力探测
 - Web 端 MCP 配置与变更入口

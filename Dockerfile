@@ -12,14 +12,14 @@ RUN go mod download
 COPY . .
 COPY --from=frontend /src/frontend/dist /tmp/frontend-dist
 RUN rm -rf internal/server/dist && cp -r /tmp/frontend-dist internal/server/dist
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/agy ./cmd/agy
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/ago ./cmd/ago
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
-COPY --from=backend /out/agy /usr/local/bin/agy
+COPY --from=backend /out/ago /usr/local/bin/ago
 
 # 注意：容器里必须提供 Linux 可执行的 antigravity_core（本仓库自带的是 macOS 版本）。
 # 运行时建议挂载工作区与 core 二进制：
-#   -v "$PWD:/workspace" -w /workspace -e AGY_WEB_TOKEN=... -p 8888:8888
-ENTRYPOINT ["agy"]
+#   -v "$PWD:/workspace" -w /workspace -e AGO_WEB_TOKEN=... -p 8888:8888
+ENTRYPOINT ["ago"]

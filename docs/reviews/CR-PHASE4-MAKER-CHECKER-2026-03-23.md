@@ -33,6 +33,6 @@
   `0`
 
 - 命令:
-  `GOCACHE=$(pwd)/.go-cache go build -o agy cmd/agy/*.go`
+  `GOCACHE=$(pwd)/.go-cache go build -o ago cmd/ago/*.go`
 - 退出码:
   `0`

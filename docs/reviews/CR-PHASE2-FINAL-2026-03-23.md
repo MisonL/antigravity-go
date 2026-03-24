@@ -8,7 +8,7 @@
 - `internal/corecap/` 所有 Manager 实现
 - `internal/agent/agent.go`
 - `internal/tools/core_v2.go` 及子文件
-- `cmd/agy/subcommands.go`
+- `cmd/ago/subcommands.go`
 
 ## 审计结论
 
@@ -39,7 +39,7 @@
   `internal/tools/core_v2_browser.go:122`
   `internal/tools/core_v2_trajectory.go:15`
   `internal/tools/core_v2_workspace.go:15`
-  `cmd/agy/subcommands.go:196`
+  `cmd/ago/subcommands.go:196`
 
 ### 3. 终结语义缺少回归测试
 
@@ -72,7 +72,7 @@
 ## 验证记录
 
 - 命令:
-  `GOCACHE=$(pwd)/.go-cache go build -o agy cmd/agy/*.go`
+  `GOCACHE=$(pwd)/.go-cache go build -o ago cmd/ago/*.go`
 - 退出码:
   `0`
 
@@ -82,6 +82,6 @@
   `0`
 
 - 命令:
-  `rg -n "TODO|todo|\\[ ]|FIXME|XXX" internal/rpc internal/corecap internal/agent/agent.go internal/tools/core_v2* cmd/agy/subcommands.go -g '*.go'`
+  `rg -n "TODO|todo|\\[ ]|FIXME|XXX" internal/rpc internal/corecap internal/agent/agent.go internal/tools/core_v2* cmd/ago/subcommands.go -g '*.go'`
 - 结果:
   无命中

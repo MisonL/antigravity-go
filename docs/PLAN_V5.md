@@ -1,4 +1,4 @@
-# Antigravity Go - Phase 5 演进蓝图 (Productization & Lifecycle)
+# Antigravity-Go - Phase 5 演进蓝图 (Productization & Lifecycle)
 
 ## 战略目标
 将 Agent 打造为具备“产品化思维”的全栈工程师，支持外部数据源（MCP）、长效任务续传（Session Persistence）以及自动化部署（Deployment）。
@@ -9,10 +9,10 @@
 
 ## 2. 任务续传面 (Session Persistence) [优先级：高]
 - [ ] **全状态序列化**: 对接内核 `/GetAllCascadeTrajectories` 与 `/AddTrackedWorkspace`，实现会话级别的状态快照。
-- [ ] **热启动增强**: 支持 `agy resume --id [UUID]` 彻底恢复包括环境变量、未提交 Diff 和 LLM 思考链路在内的所有现场。
+- [ ] **热启动增强**: 支持 `ago resume --id [UUID]` 彻底恢复包括环境变量、未提交 Diff 和 LLM 思考链路在内的所有现场。
 
 ## 3. 部署与交付面 (Deployment) [优先级：中]
-- [ ] **新增子命令 `agy deploy`**:
+- [ ] **新增子命令 `ago deploy`**:
   - 自动生成 Dockerfile 与 CI 配置。
   - 集成云端发布工具，支持一键部署至测试/生产环境。
 - [ ] **发布预检**: 在部署前强制触发 Phase 4 的 ReviewerAgent 执行“上线前审计”。

@@ -4,7 +4,7 @@
 
 ## 目标
 
-- 为 `agy deploy` 提供统一的交付入口。
+- 为 `ago deploy` 提供统一的交付入口。
 - 在部署前自动生成容器交付物：`Dockerfile` 与 `.dockerignore`。
 - 在执行部署前强制通过 `ReviewerAgent` 的生产预检。
 - 为镜像构建、推送、部署记录落盘提供事务性语义，失败时自动回滚部署记录。
@@ -18,13 +18,13 @@
 
 ## 总体设计
 
-`agy deploy` 采用三段式流水线：
+`ago deploy` 采用三段式流水线：
 
 1. 代码扫描与交付物生成
 2. ReviewerAgent 预检
 3. 构建/推送/记录提交
 
-命令层位于 `cmd/agy/workflow_commands.go`，负责参数解析、Agent/Runtime 初始化和结果输出。
+命令层位于 `cmd/ago/workflow_commands.go`，负责参数解析、Agent/Runtime 初始化和结果输出。
 
 工具层位于 `internal/tools/deployment.go`，负责：
 
@@ -116,7 +116,7 @@ Go 版 Dockerfile 要求：
 - `target`
 - `node_modules`
 - `.go-cache`
-- `.agy-doctor`
+- `.ago-doctor`
 - `docs/reviews`
 - 临时文件与日志
 
@@ -173,6 +173,6 @@ Go 版 Dockerfile 要求：
 
 1. 提交现有 `resume` CLI 改动
 2. 实现 `internal/tools/deployment.go`
-3. 接入 `agy deploy`
+3. 接入 `ago deploy`
 4. 编写 Dockerfile 生成测试
 5. 执行构建与测试

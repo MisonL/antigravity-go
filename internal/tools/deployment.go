@@ -205,9 +205,9 @@ func readGoVersion(goModPath string) (string, error) {
 }
 
 func detectMainPackage(root string) (string, string, error) {
-	preferred := filepath.Join(root, "cmd", "agy")
+	preferred := filepath.Join(root, "cmd", "ago")
 	if directoryHasMainPackage(preferred) {
-		return "./cmd/agy", "agy", nil
+		return "./cmd/ago", "ago", nil
 	}
 	cmdRoot := filepath.Join(root, "cmd")
 	entries, err := os.ReadDir(cmdRoot)

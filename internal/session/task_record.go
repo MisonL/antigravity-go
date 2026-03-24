@@ -160,9 +160,9 @@ func resolveTaskRoot(rootDir string) string {
 
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
-		return filepath.Join(".agy_go", "tasks")
+		return filepath.Join(".ago", "tasks")
 	}
-	return filepath.Join(home, ".agy_go", "tasks")
+	return filepath.Join(home, ".ago", "tasks")
 }
 
 func isValidTaskStatus(status string) bool {

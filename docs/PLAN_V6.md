@@ -1,4 +1,4 @@
-# Antigravity Go v0.1.5 - PLAN_V6
+# Antigravity-Go v0.1.5 - PLAN_V6
 
 日期: 2026-03-23
 
@@ -6,9 +6,9 @@
 
 本轮已经确认以下事实成立：
 
-- `agy init` 已实现，能够在空目录生成极简标准的 `Go Backend + React/Vite Frontend` 脚手架，并落地 `Makefile`、`README.md` 与基础工程文件。
-- 在临时空目录实测执行 `agy init` 后，生成项目可执行 `GOCACHE=$(pwd)/.go-cache go build ./...`。
-- 当前仓库执行 `GOCACHE=$(pwd)/.go-cache go build -o agy cmd/agy/*.go` 通过。
+- `ago init` 已实现，能够在空目录生成极简标准的 `Go Backend + React/Vite Frontend` 脚手架，并落地 `Makefile`、`README.md` 与基础工程文件。
+- 在临时空目录实测执行 `ago init` 后，生成项目可执行 `GOCACHE=$(pwd)/.go-cache go build ./...`。
+- 当前仓库执行 `GOCACHE=$(pwd)/.go-cache go build -o ago cmd/ago/*.go` 通过。
 - 当前仓库执行 `GOCACHE=$(pwd)/.go-cache go test ./...` 通过。
 - 当前前端执行 `npm run build` 通过，且已消除 Vite 的大 chunk warning。
 
@@ -21,7 +21,7 @@
 - Sensors:
   `get_validation_states`、`get_core_diagnostics`、`go test ./...`、WebSocket 日志、`/api/observability/summary`、轨迹与记忆查询。
 - Controller:
-  `agent.Agent`、Maker-Checker、Reviewer specialist、TUI/Web 交互层、`agy review`/`agy auto-fix`/`agy deploy`/`agy init`。
+  `agent.Agent`、Maker-Checker、Reviewer specialist、TUI/Web 交互层、`ago review`/`ago auto-fix`/`ago deploy`/`ago init`。
 - Actuators:
   `apply_core_edit`、`write_file`、`rollback_to_step`、browser 工具、MCP 动态工具、部署记录写入。
 
@@ -144,7 +144,7 @@
 
 ### 5.1 事实
 
-- `frontend/src/App.tsx`、各类 modal 组件、`internal/tui/model.go`、`internal/tui/commands.go`、`cmd/agy/*`、`internal/server/*` 中存在大量硬编码中文。
+- `frontend/src/App.tsx`、各类 modal 组件、`internal/tui/model.go`、`internal/tui/commands.go`、`cmd/ago/*`、`internal/server/*` 中存在大量硬编码中文。
 - 这些中文不仅在 UI 文本里，还出现在错误消息、日志、占位符、提示词和状态标签中。
 - 当前没有 locale 文件、message key、语言切换、默认语言策略，也没有服务端与前端共享词条层。
 
@@ -182,7 +182,7 @@
 - [DONE] 引入多 worker 并行执行与 reviewer 汇总。
 - [ ] 为 `resume` 增加命令历史、环境快照、工作树差异恢复。
 - [DONE] 建立 diff-centered 审批工作流。
-- [ ] 扩展 `agy init` 为模板选择器，而不是单模板输出。
+- [ ] 扩展 `ago init` 为模板选择器，而不是单模板输出。
 
 ### Phase 6D: 全球化与产品化
 
@@ -199,7 +199,7 @@
 
 ## 7. 最终判断
 
-Antigravity Go v0.1.5 目前已经具备“可工作的 Agent 工作台”雏形，但还没有成为“稳定、可扩展、全球化、具备产品级控制闭环的工程系统”。
+Antigravity-Go v0.1.5 目前已经具备“可工作的 Agent 工作台”雏形，但还没有成为“稳定、可扩展、全球化、具备产品级控制闭环的工程系统”。
 
 最关键的事实不是功能少，而是：
 

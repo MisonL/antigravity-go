@@ -1,4 +1,4 @@
-# Antigravity Go - Phase 3 扩展蓝图 (Expansion)
+# Antigravity-Go - Phase 3 扩展蓝图 (Expansion)
 
 ## 战略目标
 将 Phase 2 构建的六大核心面（Memory, Trajectory, Actuation, Visual, Workspace, Versioning）向用户层与业务层释放，打造全方位可视化的协同工作台，并探索高级的自主验证与协作模式。

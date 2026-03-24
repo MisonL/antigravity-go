@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import enUS from './en-US.json';
 import zhCN from './zh-CN.json';
 
-export const I18N_STORAGE_KEY = 'agy.locale';
+export const I18N_STORAGE_KEY = 'ago.locale';
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const;
 

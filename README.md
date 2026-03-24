@@ -1,11 +1,7 @@
-# Antigravity Go (v0.1.0)
-
-> [!CAUTION]
-> **这是一个实验性项目。**
-> 本项目旨在解构 Antigravity 核心 AI 功能的工作原理，实现了一个具备自愈能力和通用 LLM 适配的独立 Agent 运行环境原型。
+# Antigravity-Go (AGo) (v0.1.0)
 
 ## 1. 项目定位
-Antigravity Go 是一个利用 `antigravity_core` 作为感知层、通过 Go 宿主进程实现任务编排的实验性 IDE 工作台。
+Antigravity-Go (AGo) 是一个基于 Go 开发的工业级 Agent 运行环境与工作站。它通过集成感知层能力，实现任务编排、闭环执行与系统自愈，旨在为开发者提供稳定、极简的自动化辅助。
 
 ## 2. 核心架构与能力 (CSE Enabled)
 - **内核宿主 (Host)**: 自动化管理 `antigravity_core` 生命周期，支持 RPC Heartbeat 主动探测、端口发现与日志回放。
@@ -35,7 +31,7 @@ make update-core
 # 启动 Web 控制台 (默认端口 8888)
 make run
 ```
-配置与数据默认存储于 `~/.agy_go` 目录。您可以通过 Web UI 的“设置”入口动态调整 AI 渠道。
+执行 `make build` 后会生成 `ago` 可执行文件。配置与数据默认存储于 `~/.ago` 目录。您可以通过 Web UI 的“设置”入口动态调整 AI 渠道。
 
 ### 前端环境
 当前前端基线为 `Bun 1.3.9 + Vite 8 + React 19 + TypeScript 5.9`。标准构建链路如下：

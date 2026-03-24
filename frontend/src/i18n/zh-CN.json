@@ -1,5 +1,5 @@
 {
-  "app.title.suffix": "控制台",
+  "app.title.suffix": "AGo",
   "app.header.subtitle": "Phase 6B Domain Shell",
   "app.action.trajectory": "轨迹树",
   "app.action.memory": "系统记忆",
@@ -89,7 +89,7 @@
   "chat.logs.empty": "等待系统日志流入。",
   "chat.prompt.project_map": "请先用 get_project_summary 总结项目结构，并给出关键模块说明。",
   "chat.prompt.risk_review": "请审查 internal/agent 包，找出潜在 bug、边界条件和并发风险。",
-  "chat.prompt.architecture": "请基于 cmd/agy/main.go 解释系统整体架构与关键数据流。",
+  "chat.prompt.architecture": "请基于 cmd/ago/main.go 解释系统整体架构与关键数据流。",
   "approval.title": "等待人工审批",
   "approval.meta.tool": "工具",
   "approval.meta.category": "类别",

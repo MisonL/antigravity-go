@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Antigravity Go - Core Update Utility
+# Antigravity-Go Core Update Utility
 # Perfected by Antigravity Agent for the Boss.
 
 set -e

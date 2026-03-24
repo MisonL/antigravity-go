@@ -1,4 +1,4 @@
-# Antigravity Go (V0.1.0) - 技术手册
+# Antigravity-Go (AGo) (V0.1.0) - 技术手册
 
 ## 1. 核心架构: 宿主与内核
 
@@ -41,15 +41,15 @@ Agent 基于消息队列实现多轮对话：
 
 ## 4. 存储与会话
 
-- **会话目录**: `~/.agy_go/sessions/<session_id>/`。
+- **会话目录**: `~/.ago/sessions/<session_id>/`。
 - **存储文件**: 
   - `meta.json`: 会话元信息。
   - `events.jsonl`: 结构化事件流。
   - `messages.json`: LLM 对话上下文。
 
-## 6. 内核能力研究与解构 (Core Research)
+## 6. 内核能力适配与接口事实 (Core Capabilities)
 
-通过对 `antigravity_core` (v1.48.0) 的二进制解构与 RPC 链路探测，本项目识别并利用了以下核心能力：
+通过对 `antigravity_core` (v1.48.0) 的 RPC 链路探测与宿主适配，本项目识别并利用了以下核心能力：
 
 ### 6.1 RPC 通信协议
 内核采用 **Connect RPC** (基于 HTTP/2 的 gRPC 兼容协议) 进行通信。宿主程序通过注入 TLV 格式元数据至 `stdin` 唤醒内核，随后内核开启 HTTP 服务。
@@ -64,7 +64,7 @@ Agent 基于消息队列实现多轮对话：
 | `/CaptureScreenshot` | 浏览器快照采集 | 赋能 Agent “视觉”能力，支持 Web UI 调试。 |
 | `/GetRepoInfos` | 仓库元数据与索引洞察 | 用于 `get_repo_metadata` 工具，增强 Agent 的项目认知。 |
 | `/GetMcpServerStates` | MCP 插件状态查询 | 动态获取并挂载外部工具能力簇。 |
-| `/GetStaticExperimentStatus` | 实验性功能开关审计 | 在 `agy doctor` 中展示内核的隐藏特性（如 Cascade 引擎）。 |
+| `/GetStaticExperimentStatus` | 内核功能状态审计 | 在 `ago doctor` 中展示内核功能状态（如 Cascade 引擎）。 |
 
 ### 6.3 关键参数探测
 
@@ -92,7 +92,7 @@ Agent 基于消息队列实现多轮对话：
 
 #### 4. 视觉数据处理 (Screenshot Implementation)
 - **快照采集**: `CaptureScreenshotTool` 接收 `page_id` 参数，调用内核 RPC 获取图片二进制数据的 Base64 编码。
-- **会话持久化**: 采集到的 Base64 数据会被 `internal/session/recorder.go` 实时写入 `~/.agy_go/sessions/` 目录下的 `events.jsonl` 文件，确保 UI 调试过程可回溯。
+- **会话持久化**: 采集到的 Base64 数据会被 `internal/session/recorder.go` 实时写入 `~/.ago/sessions/` 目录下的 `events.jsonl` 文件，确保 UI 调试过程可回溯。
 
 #### 5. 项目元数据与知识图谱 (Repository Insights)
 - **统计拉取**: `GetRepoInfosTool` 通过调用内核 `/GetRepoInfos` 接口，获取由内核索引器生成的项目宏观画像。
@@ -102,8 +102,8 @@ Agent 基于消息队列实现多轮对话：
 - **实时同步**: `GetMcpStatesTool` 调用内核 `/GetMcpServerStates` 接口，动态感知当前内核已挂载的所有 MCP (Model Context Protocol) 插件。
 - **工具透传**: 宿主程序将内核返回的插件能力簇（如 Google Search、PostgreSQL 操控等）转化为 LLM 可理解的 Tool Definition 格式，实现了内核能力的“按需扩展”。
 
-#### 7. 实验性功能动态审计 (Feature Auditing)
-- **状态探测**: 在 `agy doctor` 执行期间，系统会调用内核的 `/GetStaticExperimentStatus` 接口。
+#### 7. 功能状态动态审计 (Feature Auditing)
+- **状态探测**: 在 `ago doctor` 执行期间，系统会调用内核的 `/GetStaticExperimentStatus` 接口。
 - **开关映射**: 该实现通过遍历内核返回的 `Experiments` 数组，将复杂的内部 Feature Key 映射为清晰的启用/禁用状态，帮助开发者确认如 `CASCADE_V2` 等核心推理引擎是否已在当前内核版本中激活。
 
 ## 7. 运维与升级
