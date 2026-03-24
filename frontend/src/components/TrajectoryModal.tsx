@@ -1,3 +1,4 @@
+import { AsyncContent, StateMessage } from './AsyncState';
 import { formatValue, JsonRecord, pickString, TrajectoryStepSummary, TrajectorySummary } from './planeData';
 import { SkeletonCardList, SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
@@ -81,41 +82,41 @@ export function TrajectoryModal({
             </div>
 
             <div className="data-list" data-testid="trajectory-list">
-              {isLoading && items.length === 0 && (
-                <div className="loading-shell">
-                  <div className="data-state">{t('trajectory.loading')}</div>
-                  <SkeletonCardList cards={4} lines={3} />
-                </div>
-              )}
-              {!isLoading && listError && <div className="data-state data-state-error">{listError}</div>}
-              {!isLoading && !listError && items.length === 0 && <div className="data-state">{t('trajectory.empty')}</div>}
-
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className={`data-list-item ${selectedId === item.id ? 'active' : ''}`}
-                >
-                  <button type="button" className="data-list-item-select" onClick={() => onSelect(item.id)}>
-                    <div className="data-list-item-header">
-                      <span className="data-list-item-title">{item.id}</span>
-                      <span className="badge info">{item.status}</span>
-                    </div>
-                    {item.title && <div className="data-list-item-summary">{item.title}</div>}
-                    {item.updatedAt && <div className="data-list-item-meta">{item.updatedAt}</div>}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary trajectory-resume-button"
-                    onClick={() => onResume(item.id)}
-                    disabled={resumeLoadingId === item.id}
+              <AsyncContent
+                emptyMessage={t('trajectory.empty')}
+                error={listError}
+                hasContent={items.length > 0}
+                loading={isLoading}
+                loadingMessage={t('trajectory.loading')}
+                skeleton={<SkeletonCardList cards={4} lines={3} />}
+              >
+                {items.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`data-list-item ${selectedId === item.id ? 'active' : ''}`}
                   >
-                    {resumeLoadingId === item.id ? t('trajectory.resuming') : t('trajectory.resume')}
-                  </button>
-                </div>
-              ))}
+                    <button type="button" className="data-list-item-select" onClick={() => onSelect(item.id)}>
+                      <div className="data-list-item-header">
+                        <span className="data-list-item-title">{item.id}</span>
+                        <span className="badge info">{item.status}</span>
+                      </div>
+                      {item.title && <div className="data-list-item-summary">{item.title}</div>}
+                      {item.updatedAt && <div className="data-list-item-meta">{item.updatedAt}</div>}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary trajectory-resume-button"
+                      onClick={() => onResume(item.id)}
+                      disabled={resumeLoadingId === item.id}
+                    >
+                      {resumeLoadingId === item.id ? t('trajectory.resuming') : t('trajectory.resume')}
+                    </button>
+                  </div>
+                ))}
+              </AsyncContent>
             </div>
-            {resumeError && <div className="data-list-toolbar"><div className="data-state data-state-error">{resumeError}</div></div>}
-            {resumeSuccess && <div className="data-list-toolbar"><div className="data-state data-state-success">{resumeSuccess}</div></div>}
+            {resumeError && <div className="data-list-toolbar"><StateMessage kind="error" message={resumeError} /></div>}
+            {resumeSuccess && <div className="data-list-toolbar"><StateMessage kind="success" message={resumeSuccess} /></div>}
           </section>
 
           <section className="data-detail-panel" data-testid="trajectory-detail">
@@ -127,18 +128,21 @@ export function TrajectoryModal({
             </div>
 
             <div className="data-detail-body">
-              {detailLoading && (
-                <div className="loading-shell">
-                  <div className="data-state">{t('trajectory.detail.loading')}</div>
-                  <SkeletonRows lines={4} />
-                  <SkeletonCardList cards={2} lines={2} />
-                </div>
-              )}
-              {!detailLoading && detailError && <div className="data-state data-state-error">{detailError}</div>}
-              {!detailLoading && !detailError && !selectedDetail && <div className="data-state">{t('trajectory.detail.empty')}</div>}
-
-              {!detailLoading && !detailError && selectedDetail && (
-                <>
+              <AsyncContent
+                emptyMessage={t('trajectory.detail.empty')}
+                error={detailError}
+                hasContent={Boolean(selectedDetail)}
+                loading={detailLoading}
+                loadingMessage={t('trajectory.detail.loading')}
+                skeleton={(
+                  <>
+                    <SkeletonRows lines={4} />
+                    <SkeletonCardList cards={2} lines={2} />
+                  </>
+                )}
+              >
+                {selectedDetail && (
+                  <>
                   <div className="data-detail-grid">
                     <div className="data-field">
                       <span className="data-field-label">ID</span>
@@ -192,16 +196,17 @@ export function TrajectoryModal({
                       </div>
                     )}
 
-                    {rollbackError && <div className="data-state data-state-error">{rollbackError}</div>}
-                    {rollbackSuccess && <div className="data-state data-state-success">{rollbackSuccess}</div>}
+                    <StateMessage kind="error" message={rollbackError} />
+                    <StateMessage kind="success" message={rollbackSuccess} />
                   </div>
 
                   <div className="data-json-block">
                     <div className="data-section-title">{t('trajectory.raw_json')}</div>
                     <pre className="data-json">{formatValue(selectedDetail)}</pre>
                   </div>
-                </>
-              )}
+                  </>
+                )}
+              </AsyncContent>
             </div>
           </section>
         </div>

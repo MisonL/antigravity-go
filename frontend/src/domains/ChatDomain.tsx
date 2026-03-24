@@ -35,6 +35,7 @@ export interface ChatDomainState {
 
 interface ChatWorkspaceProps {
   chat: ChatDomainState;
+  memoryCount: number | null;
   onOpenVisualSelfTest: () => void;
   scoreboardError: string;
   scoreboardSummary: TaskSummaryResponse | null;
@@ -359,17 +360,32 @@ export function useChatDomain(): ChatDomainState {
 
 export function ChatWorkspace({
   chat,
+  memoryCount,
   onOpenVisualSelfTest,
   scoreboardError,
   scoreboardSummary,
   visualSelfTestSample,
 }: ChatWorkspaceProps) {
   const { t } = useAppDomain();
+  const tokenUsage = chat.status ? chat.status.token_usage.toLocaleString() : '--';
+  const memoryUsage = memoryCount === null ? '--' : memoryCount.toLocaleString();
 
   return (
     <>
       <div className="card glass-panel chat-panel">
-        <div className="panel-header">{t('chat.panel.title')}</div>
+        <div className="panel-header chat-panel__header">
+          <span>{t('chat.panel.title')}</span>
+          <div className="chat-panel__telemetry" aria-label={t('chat.telemetry.title')}>
+            <span className="chat-panel__metric">
+              <span className="chat-panel__metric-label">{t('chat.telemetry.tokens')}</span>
+              <span className="chat-panel__metric-value">{tokenUsage}</span>
+            </span>
+            <span className="chat-panel__metric">
+              <span className="chat-panel__metric-label">{t('chat.telemetry.memory')}</span>
+              <span className="chat-panel__metric-value">{memoryUsage}</span>
+            </span>
+          </div>
+        </div>
         <div className="chat-messages" aria-live="polite">
           {chat.chatMessages.length === 0 ? (
             <div className="welcome-screen">

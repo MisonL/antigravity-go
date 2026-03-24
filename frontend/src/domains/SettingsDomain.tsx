@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
+import { LoadingState, StateMessage } from '../components/AsyncState';
+import { SkeletonRows } from '../components/Skeleton';
 import { useAppDomain } from './AppDomainContext';
 import {
+  buildTokenQuery,
   getErrorMessage,
   type SettingsConfig,
 } from './types';
+import { useAsyncResource } from './useAsyncResource';
 
 export interface SettingsDomainState {
   config: SettingsConfig;
+  configLoading: boolean;
+  configLoadError: string;
   handleSaveConfig: () => Promise<void>;
   saveError: string;
+  saving: boolean;
   setConfig: (updater: SettingsConfig | ((current: SettingsConfig) => SettingsConfig)) => void;
   setShowSettings: (show: boolean) => void;
   showSettings: boolean;
@@ -26,28 +33,34 @@ const defaultConfig: SettingsConfig = {
 };
 
 export function useSettingsDomain(): SettingsDomainState {
-  const { token } = useAppDomain();
+  const { showNotification, t, token } = useAppDomain();
   const [showSettings, setShowSettings] = useState(false);
-  const [config, setConfigState] = useState<SettingsConfig>(defaultConfig);
+  const {
+    data: config,
+    error: configLoadError,
+    loading: configLoading,
+    run: loadConfig,
+    setData: setConfigState,
+  } = useAsyncResource<SettingsConfig>({
+    initialLoading: true,
+    initialValue: defaultConfig,
+  });
   const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+  const suffix = buildTokenQuery(token);
 
   useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const resp = await fetch(`/api/config${suffix}`);
-        if (!resp.ok) {
-          return;
-        }
-        setConfigState(await resp.json() as SettingsConfig);
-      } catch (error) {
-        console.error('Failed to fetch config', error);
+    void loadConfig(async () => {
+      const resp = await fetch(`/api/config${suffix}`);
+      if (!resp.ok) {
+        throw new Error(t('settings.load_failed'));
       }
-    };
-
-    void fetchConfig();
-  }, [suffix]);
+      return await resp.json() as SettingsConfig;
+    }, {
+      onError: (error) => getErrorMessage(error, t('settings.load_error')),
+    });
+  }, [loadConfig, suffix, t]);
 
   const setConfig = useCallback((updater: SettingsConfig | ((current: SettingsConfig) => SettingsConfig)) => {
     setConfigState((current) => (
@@ -55,10 +68,11 @@ export function useSettingsDomain(): SettingsDomainState {
         ? (updater as (value: SettingsConfig) => SettingsConfig)(current)
         : updater
     ));
-  }, []);
+  }, [setConfigState]);
 
   const handleSaveConfig = useCallback(async () => {
     setSaveError('');
+    setSaving(true);
 
     try {
       const resp = await fetch(`/api/config${suffix}`, {
@@ -67,19 +81,25 @@ export function useSettingsDomain(): SettingsDomainState {
         method: 'POST',
       });
       if (!resp.ok) {
-        throw new Error('保存失败。');
+        throw new Error(t('settings.save_failed'));
       }
       setShowSettings(false);
-      window.alert('配置已保存并应用。');
+      showNotification(t('settings.save_success'), 'success');
     } catch (error) {
-      setSaveError(getErrorMessage(error, '保存配置失败。'));
+      setSaveError(getErrorMessage(error, t('settings.save_error')));
+      showNotification(getErrorMessage(error, t('settings.save_error')), 'error');
+    } finally {
+      setSaving(false);
     }
-  }, [config, suffix]);
+  }, [config, showNotification, suffix, t]);
 
   return {
     config,
+    configLoading,
+    configLoadError,
     handleSaveConfig,
     saveError,
+    saving,
     setConfig,
     setShowSettings,
     showSettings,
@@ -87,6 +107,8 @@ export function useSettingsDomain(): SettingsDomainState {
 }
 
 export function SettingsModal({ settings }: SettingsModalProps) {
+  const { locale, setLocale, t } = useAppDomain();
+
   if (!settings.showSettings) {
     return null;
   }
@@ -95,39 +117,69 @@ export function SettingsModal({ settings }: SettingsModalProps) {
 
   return (
     <div className="modal-overlay">
-      <div className="glass-panel modal-content settings-modal">
+      <div
+        className="glass-panel modal-content settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+      >
         <div className="modal-header">
-          <h3>AI 渠道配置</h3>
-          <button onClick={() => settings.setShowSettings(false)} type="button">X</button>
+          <h3 id="settings-modal-title">{t('settings.title')}</h3>
+          <button aria-label={t('common.close')} onClick={() => settings.setShowSettings(false)} type="button">X</button>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" aria-busy={settings.configLoading || settings.saving}>
+          {settings.configLoading ? (
+            <LoadingState
+              message={t('settings.loading')}
+              skeleton={(
+                <>
+                  <SkeletonRows lines={3} />
+                  <SkeletonRows lines={3} />
+                  <SkeletonRows lines={3} />
+                  <SkeletonRows lines={3} />
+                </>
+              )}
+            />
+          ) : (
+            <>
+              <StateMessage kind="error" message={settings.configLoadError} />
           <div className="form-group">
-            <label htmlFor="provider">AI 渠道类型</label>
+            <label htmlFor="provider">{t('settings.provider')}</label>
             <select
               id="provider"
+              disabled={settings.saving}
               onChange={(event) => settings.setConfig((current) => ({ ...current, provider: event.target.value }))}
               value={provider}
             >
-              <option value="openai">OpenAI 兼容 (Chat v1)</option>
-              <option value="openai-legacy">OpenAI 兼容 (Legacy)</option>
-              <option value="anthropic">Anthropic 兼容</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="ollama">Ollama (本地)</option>
-              <option value="lmstudio">LM Studio (本地)</option>
+              <option value="openai">{t('settings.provider.openai')}</option>
+              <option value="openai-legacy">{t('settings.provider.openai_legacy')}</option>
+              <option value="anthropic">{t('settings.provider.anthropic')}</option>
+              <option value="gemini">{t('settings.provider.gemini')}</option>
+              <option value="ollama">{t('settings.provider.ollama')}</option>
+              <option value="lmstudio">{t('settings.provider.lmstudio')}</option>
             </select>
           </div>
 
           <div className="form-group">
-            <label htmlFor="model">模型名称</label>
+            <label htmlFor="language">{t('settings.language')}</label>
+            <select id="language" disabled={settings.saving} onChange={(event) => setLocale(event.target.value)} value={locale}>
+              <option value="zh-CN">{t('settings.language.zh')}</option>
+              <option value="en-US">{t('settings.language.en')}</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="model">{t('settings.model')}</label>
             <input
               id="model"
+              disabled={settings.saving}
               onChange={(event) => settings.setConfig((current) => ({ ...current, model: event.target.value }))}
               placeholder={
                 provider === 'ollama'
-                  ? '例如 qwen2.5-coder:7b'
+                  ? t('settings.placeholder.model.ollama')
                   : provider === 'anthropic'
-                    ? '例如 claude-3-5-sonnet-latest'
-                    : '例如 gpt-4o 或 qwen3-max'
+                    ? t('settings.placeholder.model.anthropic')
+                    : t('settings.placeholder.model.default')
               }
               type="text"
               value={settings.config.model}
@@ -135,9 +187,10 @@ export function SettingsModal({ settings }: SettingsModalProps) {
           </div>
 
           <div className="form-group">
-            <label htmlFor="base_url">接口地址</label>
+            <label htmlFor="base_url">{t('settings.base_url')}</label>
             <input
               id="base_url"
+              disabled={settings.saving}
               onChange={(event) => settings.setConfig((current) => ({ ...current, base_url: event.target.value }))}
               placeholder={
                 provider === 'ollama'
@@ -146,7 +199,7 @@ export function SettingsModal({ settings }: SettingsModalProps) {
                     ? 'http://localhost:1234/v1'
                     : provider === 'anthropic'
                       ? 'https://api.anthropic.com'
-                      : '例如 https://api.openai.com/v1'
+                      : t('settings.placeholder.base_url.default')
               }
               type="text"
               value={settings.config.base_url}
@@ -154,20 +207,31 @@ export function SettingsModal({ settings }: SettingsModalProps) {
           </div>
 
           <div className="form-group">
-            <label htmlFor="api_key">API 密钥</label>
+            <label htmlFor="api_key">{t('settings.api_key')}</label>
             <input
               id="api_key"
+              disabled={settings.saving}
               onChange={(event) => settings.setConfig((current) => ({ ...current, api_key: event.target.value }))}
-              placeholder="填入 API Key，本地模型可留空"
+              placeholder={t('settings.placeholder.api_key')}
               type="password"
               value={settings.config.api_key}
             />
           </div>
-          {settings.saveError && <div className="data-state data-state-error">{settings.saveError}</div>}
+              <StateMessage kind="error" message={settings.saveError} />
+            </>
+          )}
         </div>
         <div className="modal-footer">
-          <button className="btn-secondary" onClick={() => settings.setShowSettings(false)} type="button">取消</button>
-          <button className="btn-primary" onClick={() => void settings.handleSaveConfig()} type="button">保存配置</button>
+          <button className="btn-secondary" disabled={settings.saving} onClick={() => settings.setShowSettings(false)} type="button">{t('common.cancel')}</button>
+          <button
+            className={`btn-primary${settings.saving ? ' is-busy' : ''}`}
+            disabled={settings.saving || settings.configLoading}
+            onClick={() => void settings.handleSaveConfig()}
+            type="button"
+            aria-busy={settings.saving}
+          >
+            <span>{settings.saving ? t('common.saving') : t('settings.button.save')}</span>
+          </button>
         </div>
       </div>
     </div>

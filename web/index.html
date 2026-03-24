@@ -217,16 +217,16 @@
 
             <div class="button-group">
                 <button class="btn btn-primary" id="connectBtn" onclick="connect()">
-                    🔌 连接服务器
+                    连接服务器
                 </button>
                 <button class="btn btn-secondary" id="initializeBtn" onclick="initialize()" disabled>
-                    📡 初始化 LSP
+                    初始化 LSP
                 </button>
                 <button class="btn btn-secondary" id="completionBtn" onclick="requestCompletion()" disabled>
-                    💡 代码补全
+                    代码补全
                 </button>
                 <button class="btn btn-secondary" id="hoverBtn" onclick="requestHover()" disabled>
-                    🔍 悬停提示
+                    悬停提示
                 </button>
             </div>
 
@@ -248,7 +248,7 @@ func main() {
 
                 <div class="editor-panel">
                     <div class="panel-header">
-                        <span class="panel-title">📊 结果面板</span>
+                        <span class="panel-title">结果面板</span>
                     </div>
                     <div class="result-panel" id="resultPanel">
                         等待操作...
@@ -284,7 +284,7 @@ func main() {
 
         async function connect() {
             try {
-                appendResult('🔌 正在连接到代理服务器...');
+                appendResult('正在连接到代理服务器...');
 
                 const response = await fetch(`${API_BASE}/initialize`, {
                     method: 'POST',
@@ -295,8 +295,8 @@ func main() {
 
                 if (response.ok) {
                     const data = await response.json();
-                    appendResult('✅ 连接成功!');
-                    appendResult(`📊 响应: ${JSON.stringify(data, null, 2)}`);
+                    appendResult('连接成功');
+                    appendResult(`响应: ${JSON.stringify(data, null, 2)}`);
 
                     isConnected = true;
                     isInitialized = true;
@@ -310,13 +310,13 @@ func main() {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                appendResult(`❌ 连接失败: ${error.message}`);
+                appendResult(`连接失败: ${error.message}`);
             }
         }
 
         async function initialize() {
             try {
-                appendResult('📡 正在初始化 LSP...');
+                appendResult('正在初始化 LSP...');
 
                 const response = await fetch(`${API_BASE}/initialize`, {
                     method: 'POST',
@@ -327,8 +327,8 @@ func main() {
 
                 if (response.ok) {
                     const data = await response.json();
-                    appendResult('✅ LSP 初始化成功!');
-                    appendResult(`📊 响应: ${JSON.stringify(data, null, 2)}`);
+                    appendResult('LSP 初始化成功');
+                    appendResult(`响应: ${JSON.stringify(data, null, 2)}`);
 
                     // 打开文档
                     await openDocument();
@@ -336,7 +336,7 @@ func main() {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                appendResult(`❌ 初始化失败: ${error.message}`);
+                appendResult(`初始化失败: ${error.message}`);
             }
         }
 
@@ -345,7 +345,7 @@ func main() {
             const uri = 'file:///test_file.go';
 
             try {
-                appendResult('📄 正在打开文档...');
+                appendResult('正在打开文档...');
 
                 const response = await fetch(`${API_BASE}/didOpen`, {
                     method: 'POST',
@@ -360,12 +360,12 @@ func main() {
                 });
 
                 if (response.ok) {
-                    appendResult('✅ 文档打开成功!');
+                    appendResult('文档打开成功');
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                appendResult(`❌ 打开文档失败: ${error.message}`);
+                appendResult(`打开文档失败: ${error.message}`);
             }
         }
 
@@ -373,7 +373,7 @@ func main() {
             const uri = 'file:///test_file.go';
 
             try {
-                appendResult('💡 正在请求代码补全...');
+                appendResult('正在请求代码补全...');
 
                 const response = await fetch(`${API_BASE}/completion`, {
                     method: 'POST',
@@ -389,13 +389,13 @@ func main() {
 
                 if (response.ok) {
                     const data = await response.json();
-                    appendResult('✅ 代码补全成功!');
-                    appendResult(`📊 响应: ${JSON.stringify(data, null, 2)}`);
+                    appendResult('代码补全成功');
+                    appendResult(`响应: ${JSON.stringify(data, null, 2)}`);
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                appendResult(`❌ 代码补全失败: ${error.message}`);
+                appendResult(`代码补全失败: ${error.message}`);
             }
         }
 
@@ -403,7 +403,7 @@ func main() {
             const uri = 'file:///test_file.go';
 
             try {
-                appendResult('🔍 正在请求悬停提示...');
+                appendResult('正在请求悬停提示...');
 
                 const response = await fetch(`${API_BASE}/hover`, {
                     method: 'POST',
@@ -419,13 +419,13 @@ func main() {
 
                 if (response.ok) {
                     const data = await response.json();
-                    appendResult('✅ 悬停提示成功!');
-                    appendResult(`📊 响应: ${JSON.stringify(data, null, 2)}`);
+                    appendResult('悬停提示成功');
+                    appendResult(`响应: ${JSON.stringify(data, null, 2)}`);
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                appendResult(`❌ 悬停提示失败: ${error.message}`);
+                appendResult(`悬停提示失败: ${error.message}`);
             }
         }
 

@@ -16,7 +16,6 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY-}
       GEMINI_API_KEY: ${GEMINI_API_KEY-}
     command:
-      - agy
       - --web
       - --no-tui
       - --web-host
@@ -27,4 +26,3 @@ services:
       - ${AGY_WEB_TOKEN}
       - --bin
       - ./antigravity_core
-

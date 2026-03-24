@@ -10,6 +10,7 @@ import {
 } from '../components/planeData';
 import { useAppDomain } from './AppDomainContext';
 import {
+  buildTokenQuery,
   getErrorMessage,
   normalizeChatHistory,
   type ObservabilityEvent,
@@ -17,6 +18,7 @@ import {
   type ResumeSessionResponse,
   type VisualSelfTestSample,
 } from './types';
+import { useAsyncResource } from './useAsyncResource';
 
 export interface ObservabilityDomainState {
   handleOpenMemoryModal: () => Promise<void>;
@@ -68,6 +70,8 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   const {
     chatBridge,
     initialResumeTrajectoryId,
+    showNotification,
+    t,
     setObservabilityBridge,
     token,
   } = useAppDomain();
@@ -76,62 +80,79 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   const [showMemoryModal, setShowMemoryModal] = useState(false);
   const [showMcpPanel, setShowMcpPanel] = useState(false);
   const [showVisualSelfTestModal, setShowVisualSelfTestModal] = useState(false);
-  const [trajectories, setTrajectories] = useState<TrajectorySummary[]>([]);
-  const [trajectoriesLoading, setTrajectoriesLoading] = useState(false);
-  const [trajectoriesError, setTrajectoriesError] = useState('');
   const [selectedTrajectoryId, setSelectedTrajectoryId] = useState('');
-  const [selectedTrajectoryDetail, setSelectedTrajectoryDetail] = useState<JsonRecord | null>(null);
-  const [trajectoryDetailLoading, setTrajectoryDetailLoading] = useState(false);
-  const [trajectoryDetailError, setTrajectoryDetailError] = useState('');
   const [rollbackStepId, setRollbackStepId] = useState('');
   const [rollbackError, setRollbackError] = useState('');
   const [rollbackSuccess, setRollbackSuccess] = useState('');
   const [resumeLoadingId, setResumeLoadingId] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeSuccess, setResumeSuccess] = useState('');
-  const [memories, setMemories] = useState<MemorySummary[]>([]);
-  const [memoriesLoading, setMemoriesLoading] = useState(false);
-  const [memoriesError, setMemoriesError] = useState('');
-  const [observabilitySummary, setObservabilitySummary] = useState<ObservabilitySummary | null>(null);
-  const [observabilityError, setObservabilityError] = useState('');
-  const [taskSummary, setTaskSummary] = useState<TaskSummaryResponse | null>(null);
-  const [taskSummaryError, setTaskSummaryError] = useState('');
   const [latestObservabilityEvent, setLatestObservabilityEvent] = useState<ObservabilityEvent | null>(null);
-  const [visualSelfTestLoading, setVisualSelfTestLoading] = useState(false);
-  const [visualSelfTestError, setVisualSelfTestError] = useState('');
-  const [visualSelfTestSample, setVisualSelfTestSample] = useState<VisualSelfTestSample | null>(null);
+  const {
+    data: trajectories,
+    error: trajectoriesError,
+    loading: trajectoriesLoading,
+    run: loadTrajectories,
+  } = useAsyncResource<TrajectorySummary[]>({ initialValue: [] });
+  const {
+    data: selectedTrajectoryDetail,
+    error: trajectoryDetailError,
+    loading: trajectoryDetailLoading,
+    run: loadTrajectoryDetail,
+    setData: setSelectedTrajectoryDetail,
+  } = useAsyncResource<JsonRecord | null>({ initialValue: null });
+  const {
+    data: memories,
+    error: memoriesError,
+    loading: memoriesLoading,
+    run: loadMemories,
+  } = useAsyncResource<MemorySummary[]>({ initialValue: [] });
+  const {
+    data: observabilitySummary,
+    error: observabilityError,
+    run: loadObservabilitySummary,
+  } = useAsyncResource<ObservabilitySummary | null>({ initialValue: null });
+  const {
+    data: taskSummary,
+    error: taskSummaryError,
+    run: loadTaskSummary,
+  } = useAsyncResource<TaskSummaryResponse | null>({ initialValue: null });
+  const {
+    data: visualSelfTestSample,
+    error: visualSelfTestError,
+    loading: visualSelfTestLoading,
+    run: loadVisualSelfTestSample,
+  } = useAsyncResource<VisualSelfTestSample | null>({ initialValue: null });
 
-  const suffix = useMemo(() => (token ? `?token=${encodeURIComponent(token)}` : ''), [token]);
+  const suffix = useMemo(() => buildTokenQuery(token), [token]);
   const trajectorySteps = useMemo(
     () => normalizeTrajectorySteps(selectedTrajectoryDetail),
     [selectedTrajectoryDetail],
   );
 
   const fetchObservabilitySummary = useCallback(async () => {
-    setObservabilityError('');
-    try {
+    await loadObservabilitySummary(async () => {
       const resp = await fetch(`/api/observability/summary${suffix}`);
       if (!resp.ok) {
-        throw new Error(`可观测性摘要请求失败: ${resp.status}`);
+        throw new Error(t('observability.error.summary_request', resp.status));
       }
-      setObservabilitySummary(await resp.json() as ObservabilitySummary);
-    } catch (error) {
-      setObservabilityError(getErrorMessage(error, '加载可观测性摘要失败。'));
-    }
-  }, [suffix]);
+      return await resp.json() as ObservabilitySummary;
+    }, {
+      onError: (error) => getErrorMessage(error, t('observability.error.summary_load')),
+    });
+  }, [loadObservabilitySummary, suffix, t]);
 
   const fetchTaskSummary = useCallback(async () => {
-    setTaskSummaryError('');
-    try {
+    await loadTaskSummary(async () => {
       const resp = await fetch(`/api/tasks${suffix}`);
       if (!resp.ok) {
-        throw new Error(`任务摘要请求失败: ${resp.status}`);
+        throw new Error(t('observability.error.tasks_request', resp.status));
       }
-      setTaskSummary(await resp.json() as TaskSummaryResponse);
-    } catch (error) {
-      setTaskSummaryError(getErrorMessage(error, '加载任务摘要失败。'));
-    }
-  }, [suffix]);
+      return await resp.json() as TaskSummaryResponse;
+    }, {
+      onError: (error) => getErrorMessage(error, t('observability.error.tasks_load')),
+    });
+  }, [loadTaskSummary, suffix, t]);
 
   const fetchTrajectoryDetail = useCallback(async (id: string, force = false) => {
     if (!id) {
@@ -142,85 +163,88 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }
 
     setSelectedTrajectoryId(id);
-    setTrajectoryDetailLoading(true);
-    setTrajectoryDetailError('');
-
-    try {
+    await loadTrajectoryDetail(async () => {
       const resp = await fetch(`/api/trajectories/${encodeURIComponent(id)}${suffix}`);
       if (!resp.ok) {
-        throw new Error(`轨迹详情请求失败: ${resp.status}`);
+        throw new Error(t('observability.error.trajectory_detail_request', resp.status));
       }
       const data = await resp.json();
       if (!data || typeof data !== 'object') {
-        throw new Error('轨迹详情格式无效');
+        throw new Error(t('observability.error.trajectory_detail_invalid'));
       }
-      setSelectedTrajectoryDetail(data as JsonRecord);
-      setRollbackError('');
-      setRollbackSuccess('');
-    } catch (error) {
-      setSelectedTrajectoryDetail(null);
-      setTrajectoryDetailError(getErrorMessage(error, '加载轨迹详情失败。'));
-    } finally {
-      setTrajectoryDetailLoading(false);
-    }
-  }, [selectedTrajectoryDetail, selectedTrajectoryId, suffix]);
+      return data as JsonRecord;
+    }, {
+      onError: (error) => {
+        setSelectedTrajectoryDetail(null);
+        return getErrorMessage(error, t('observability.error.trajectory_detail_load'));
+      },
+      onSuccess: () => {
+        setRollbackError('');
+        setRollbackSuccess('');
+      },
+    });
+  }, [loadTrajectoryDetail, selectedTrajectoryDetail, selectedTrajectoryId, setSelectedTrajectoryDetail, suffix, t]);
 
   const fetchTrajectories = useCallback(async (force = false) => {
     if (!force && trajectories.length > 0) {
       return;
     }
 
-    setTrajectoriesLoading(true);
-    setTrajectoriesError('');
-
-    try {
+    const normalized = await loadTrajectories(async () => {
       const resp = await fetch(`/api/trajectories${suffix}`);
       if (!resp.ok) {
-        throw new Error(`轨迹列表请求失败: ${resp.status}`);
+        throw new Error(t('observability.error.trajectory_list_request', resp.status));
       }
-      const normalized = normalizeTrajectories(await resp.json());
-      setTrajectories(normalized);
-      await fetchObservabilitySummary();
-
-      if (normalized.length === 0) {
-        setSelectedTrajectoryId('');
-        setSelectedTrajectoryDetail(null);
-        setTrajectoryDetailError('');
-        return;
-      }
-
-      const nextId = normalized.some((item) => item.id === selectedTrajectoryId)
-        ? selectedTrajectoryId
-        : normalized[0].id;
-      await fetchTrajectoryDetail(nextId, force);
-    } catch (error) {
-      setTrajectoriesError(getErrorMessage(error, '加载轨迹列表失败。'));
-    } finally {
-      setTrajectoriesLoading(false);
+      return normalizeTrajectories(await resp.json());
+    }, {
+      onError: (error) => getErrorMessage(error, t('observability.error.trajectory_list_load')),
+    });
+    if (!normalized) {
+      return;
     }
-  }, [fetchObservabilitySummary, fetchTrajectoryDetail, selectedTrajectoryId, suffix, trajectories.length]);
+
+    await fetchObservabilitySummary();
+
+    if (normalized.length === 0) {
+      setSelectedTrajectoryId('');
+      setSelectedTrajectoryDetail(null);
+      return;
+    }
+
+    const nextId = normalized.some((item) => item.id === selectedTrajectoryId)
+      ? selectedTrajectoryId
+      : normalized[0].id;
+    await fetchTrajectoryDetail(nextId, force);
+  }, [
+    fetchObservabilitySummary,
+    fetchTrajectoryDetail,
+    loadTrajectories,
+    selectedTrajectoryId,
+    setSelectedTrajectoryDetail,
+    suffix,
+    t,
+    trajectories.length,
+  ]);
 
   const fetchMemories = useCallback(async (force = false) => {
     if (!force && memories.length > 0) {
       return;
     }
 
-    setMemoriesLoading(true);
-    setMemoriesError('');
-
-    try {
+    const nextMemories = await loadMemories(async () => {
       const resp = await fetch(`/api/memories${suffix}`);
       if (!resp.ok) {
-        throw new Error(`记忆列表请求失败: ${resp.status}`);
+        throw new Error(t('observability.error.memory_list_request', resp.status));
       }
-      setMemories(normalizeMemories(await resp.json()));
-      await fetchObservabilitySummary();
-    } catch (error) {
-      setMemoriesError(getErrorMessage(error, '加载系统记忆失败。'));
-    } finally {
-      setMemoriesLoading(false);
+      return normalizeMemories(await resp.json());
+    }, {
+      onError: (error) => getErrorMessage(error, t('observability.error.memory_list_load')),
+    });
+    if (!nextMemories) {
+      return;
     }
-  }, [fetchObservabilitySummary, memories.length, suffix]);
+    await fetchObservabilitySummary();
+  }, [fetchObservabilitySummary, loadMemories, memories.length, suffix, t]);
 
   const rollbackToStep = useCallback(async (stepId: string) => {
     if (!stepId) {
@@ -238,16 +262,20 @@ export function useObservabilityDomain(): ObservabilityDomainState {
         method: 'POST',
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `回滚失败: ${resp.status}`);
+        throw new Error(await resp.text() || t('observability.error.rollback_request', resp.status));
       }
-      setRollbackSuccess(`已提交回滚请求: ${stepId}`);
+      const message = t('observability.rollback.success', stepId);
+      setRollbackSuccess(message);
+      showNotification(message, 'success');
       await fetchTrajectories(true);
     } catch (error) {
-      setRollbackError(getErrorMessage(error, '轨迹回滚失败。'));
+      const message = getErrorMessage(error, t('observability.error.rollback_load'));
+      setRollbackError(message);
+      showNotification(message, 'error');
     } finally {
       setRollbackStepId('');
     }
-  }, [fetchTrajectories, suffix]);
+  }, [fetchTrajectories, showNotification, suffix, t]);
 
   const resumeTrajectorySession = useCallback(async (
     trajectoryId: string,
@@ -271,7 +299,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
         method: 'POST',
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `会话恢复失败: ${resp.status}`);
+        throw new Error(await resp.text() || t('observability.error.resume_request', resp.status));
       }
 
       const data = await resp.json() as ResumeSessionResponse;
@@ -297,35 +325,34 @@ export function useObservabilityDomain(): ObservabilityDomainState {
       }
 
       if (showSuccess) {
-        setResumeSuccess(`已恢复会话: ${trajectoryId}`);
+        const message = t('observability.resume.success', trajectoryId);
+        setResumeSuccess(message);
+        showNotification(message, 'success');
       }
     } catch (error) {
-      setResumeError(getErrorMessage(error, '恢复会话失败。'));
+      const message = getErrorMessage(error, t('observability.error.resume_load'));
+      setResumeError(message);
+      showNotification(message, 'error');
     } finally {
       setResumeLoadingId('');
     }
-  }, [chatBridge, suffix, token]);
+  }, [chatBridge, showNotification, suffix, t, token]);
 
   const fetchVisualSelfTestSample = useCallback(async (force = false) => {
     if (!force && visualSelfTestSample) {
       return;
     }
 
-    setVisualSelfTestLoading(true);
-    setVisualSelfTestError('');
-
-    try {
+    await loadVisualSelfTestSample(async () => {
       const resp = await fetch(`/api/visual-self-test/sample${suffix}`);
       if (!resp.ok) {
-        throw new Error(`视觉自测任务请求失败: ${resp.status}`);
+        throw new Error(t('observability.error.visual_request', resp.status));
       }
-      setVisualSelfTestSample(await resp.json() as VisualSelfTestSample);
-    } catch (error) {
-      setVisualSelfTestError(getErrorMessage(error, '加载视觉自测任务失败。'));
-    } finally {
-      setVisualSelfTestLoading(false);
-    }
-  }, [suffix, visualSelfTestSample]);
+      return await resp.json() as VisualSelfTestSample;
+    }, {
+      onError: (error) => getErrorMessage(error, t('observability.error.visual_load')),
+    });
+  }, [loadVisualSelfTestSample, suffix, t, visualSelfTestSample]);
 
   const handleOpenTrajectoryModal = useCallback(async () => {
     setShowTrajectoryModal(true);

@@ -1,3 +1,4 @@
+import { AsyncContent } from './AsyncState';
 import { SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
 
@@ -59,45 +60,45 @@ export function VisualSelfTestModal({
             </button>
           </div>
 
-          {isLoading && !sample && (
-            <div className="loading-shell">
-              <div className="data-state">{t('visual.loading')}</div>
-              <SkeletonRows lines={4} />
-            </div>
-          )}
-          {!isLoading && error && <div className="data-state data-state-error">{error}</div>}
-
-          {sample && (
-            <>
-              <div className="data-detail-grid">
-                <div className="data-field">
-                  <span className="data-field-label">{t('visual.field.task_title')}</span>
-                  <span className="data-field-value">{sample.title}</span>
+          <AsyncContent
+            error={error}
+            hasContent={Boolean(sample)}
+            loading={isLoading}
+            loadingMessage={t('visual.loading')}
+            skeleton={<SkeletonRows lines={4} />}
+          >
+            {sample && (
+              <>
+                <div className="data-detail-grid">
+                  <div className="data-field">
+                    <span className="data-field-label">{t('visual.field.task_title')}</span>
+                    <span className="data-field-value">{sample.title}</span>
+                  </div>
+                  <div className="data-field">
+                    <span className="data-field-label">{t('visual.field.target_url')}</span>
+                    <span className="data-field-value">{sample.url}</span>
+                  </div>
                 </div>
-                <div className="data-field">
-                  <span className="data-field-label">{t('visual.field.target_url')}</span>
-                  <span className="data-field-value">{sample.url}</span>
-                </div>
-              </div>
 
-              <div className="data-json-block">
-                <div className="data-section-title">{t('visual.suggested_task')}</div>
-                <pre className="data-json">{sample.task}</pre>
-              </div>
-
-              <div className="data-json-block">
-                <div className="data-section-title">{t('visual.checklist')}</div>
-                <div className="trajectory-step-list">
-                  {sample.checklist.map((item) => (
-                    <div key={item.selector} className="trajectory-step-card">
-                      <div className="trajectory-step-title">{item.label}</div>
-                      <div className="trajectory-step-meta">{item.selector}</div>
-                    </div>
-                  ))}
+                <div className="data-json-block">
+                  <div className="data-section-title">{t('visual.suggested_task')}</div>
+                  <pre className="data-json">{sample.task}</pre>
                 </div>
-              </div>
-            </>
-          )}
+
+                <div className="data-json-block">
+                  <div className="data-section-title">{t('visual.checklist')}</div>
+                  <div className="trajectory-step-list">
+                    {sample.checklist.map((item) => (
+                      <div key={item.selector} className="trajectory-step-card">
+                        <div className="trajectory-step-title">{item.label}</div>
+                        <div className="trajectory-step-meta">{item.selector}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </AsyncContent>
         </div>
 
         <div className="modal-footer">

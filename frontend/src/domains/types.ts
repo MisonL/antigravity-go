@@ -80,6 +80,14 @@ export interface ChatDomainBridge {
   insertPrompt: (text: string) => void;
 }
 
+export type NotificationKind = 'info' | 'success' | 'error';
+
+export interface NotificationItem {
+  id: number;
+  kind: NotificationKind;
+  message: string;
+}
+
 export interface ObservabilityDomainBridge {
   handleEvent: (event: ObservabilityEvent) => void;
 }
@@ -93,13 +101,22 @@ export function getErrorMessage(error: unknown, fallback: string): string {
 
 export function normalizeApprovalRequest(payload: unknown): ApprovalRequest {
   const data = isRecord(payload) ? payload : {};
+  const rawChunks = Array.isArray(data.chunks) ? data.chunks : [];
   return {
     id: typeof data.id === 'string' ? data.id : '',
     tool: typeof data.tool === 'string' ? data.tool : '',
     category: typeof data.category === 'string' ? data.category : 'tool_execution',
-    summary: typeof data.summary === 'string' ? data.summary : '工具请求执行，需要人工确认。',
+    summary: typeof data.summary === 'string' ? data.summary : 'The tool request requires human confirmation.',
     args: typeof data.args === 'string' ? data.args : '',
     preview: typeof data.preview === 'string' ? data.preview : '',
+    chunks: rawChunks.map((item) => {
+      const chunk = isRecord(item) ? item : {};
+      return {
+        id: typeof chunk.id === 'string' ? chunk.id : '',
+        header: typeof chunk.header === 'string' ? chunk.header : '',
+        preview: typeof chunk.preview === 'string' ? chunk.preview : '',
+      };
+    }).filter((chunk) => chunk.id !== ''),
     metadata: isRecord(data.metadata) ? data.metadata : {},
   };
 }
@@ -189,10 +206,15 @@ export function normalizeChatHistory(payload: unknown): ChatMessage[] {
 export function buildWebSocketURL(
   token: string,
   resumeTrajectoryId: string,
+  locale: string,
   explicitURL = '',
 ): string {
   if (explicitURL.trim()) {
-    return explicitURL;
+    const url = new URL(explicitURL, window.location.origin);
+    if (locale) {
+      url.searchParams.set('locale', locale);
+    }
+    return url.toString();
   }
 
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -203,13 +225,24 @@ export function buildWebSocketURL(
   if (resumeTrajectoryId) {
     params.set('resume_trajectory', resumeTrajectoryId);
   }
+  if (locale) {
+    params.set('locale', locale);
+  }
   const suffix = params.toString();
   return `${proto}://${window.location.host}/ws${suffix ? `?${suffix}` : ''}`;
 }
 
-export function formatCodeActionPrompt(currentFile: string | null, code: string): string {
+export function buildTokenQuery(token: string): string {
+  return token ? `?token=${encodeURIComponent(token)}` : '';
+}
+
+export function formatCodeActionPrompt(
+  t: (key: string, ...args: unknown[]) => string,
+  currentFile: string | null,
+  code: string,
+): string {
   const extension = currentFile?.split('.').pop() || '';
-  return `请解释或重构这段代码，并说明关键改动与风险点：\n\n\`\`\`${extension}\n${code}\n\`\`\`\n\n`;
+  return t('types.code_action_prompt', extension, code);
 }
 
 export function parseSpecialistToolArgs(raw: string): JsonRecord {

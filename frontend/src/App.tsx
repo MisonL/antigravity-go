@@ -106,7 +106,7 @@ function LayoutShell() {
             {t('app.action.trajectory')} {observability.observabilitySummary ? `(${observability.observabilitySummary.trajectories.count})` : ''}
           </button>
           <button className="badge badge-btn" data-testid="open-memory" onClick={() => void observability.handleOpenMemoryModal()} type="button">
-            {t('app.action.memory')} {observability.observabilitySummary ? `(${observability.observabilitySummary.memories.count})` : ''}
+            {t('app.action.memory')}
           </button>
           <button className="badge badge-btn" onClick={() => observability.setShowMcpPanel(true)} type="button">MCP</button>
           <button className="badge badge-btn" data-testid="open-visual-self-test" onClick={() => void observability.handleOpenVisualSelfTestModal()} type="button">{t('app.action.visual_self_test')}</button>
@@ -135,6 +135,7 @@ function LayoutShell() {
           <div className="control-plane__workspace">
             <ChatWorkspace
               chat={chat}
+              memoryCount={observability.observabilitySummary?.memories.count ?? null}
               onOpenVisualSelfTest={() => void observability.handleOpenVisualSelfTestModal()}
               scoreboardError={observability.taskSummaryError}
               scoreboardSummary={observability.taskSummary}

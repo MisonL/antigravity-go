@@ -38,9 +38,9 @@
   gap: var(--space-4);
   min-height: 3.75rem;
   padding: 0.65rem var(--space-4);
-  border-radius: calc(var(--radius-md) + 0.25rem);
+  border-radius: 0;
   background: rgba(248, 250, 252, 0.68);
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
 }
 
 .command-hud__brand {
@@ -55,7 +55,6 @@
   min-width: 0;
 }
 
-.logo h1,
 .command-hud__brand h1 {
   margin: 0;
   font-size: 1.35rem;
@@ -109,7 +108,7 @@
   min-height: 2rem;
   padding: 0 0.75rem;
   border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 999px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.7);
   color: var(--color-text-muted);
   font-size: 0.74rem;
@@ -122,9 +121,8 @@
 .command-hud__status-dot {
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 999px;
+  border-radius: 0;
   background: rgba(148, 163, 184, 0.72);
-  box-shadow: 0 0 0 0.18rem rgba(148, 163, 184, 0.16);
   flex-shrink: 0;
 }
 
@@ -134,7 +132,6 @@
 
 .command-hud__status-pill.is-online .command-hud__status-dot {
   background: rgba(21, 128, 61, 0.9);
-  box-shadow: 0 0 0 0.18rem rgba(21, 128, 61, 0.12);
 }
 
 .command-hud__status-pill.is-offline {
@@ -143,7 +140,6 @@
 
 .command-hud__status-pill.is-offline .command-hud__status-dot {
   background: rgba(180, 83, 9, 0.88);
-  box-shadow: 0 0 0 0.18rem rgba(180, 83, 9, 0.12);
 }
 
 .command-hud__status-pill.is-anchored,
@@ -238,7 +234,7 @@
 .data-plane-indicator {
   width: 0.72rem;
   height: 0.72rem;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid rgba(15, 23, 42, 0.18);
   background: rgba(148, 163, 184, 0.3);
   flex-shrink: 0;

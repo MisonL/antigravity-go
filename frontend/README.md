@@ -1,15 +1,29 @@
 # frontend
 
-To install dependencies:
+Stack baseline: `Bun 1.3.9 + Vite 8 + React 19 + TypeScript 5.9`
+
+UI baseline: `Commander Paradigm 2.0` with `0px` radius across panels, badges, buttons, and form controls.
+
+Install dependencies with Bun:
 
 ```bash
 bun install
 ```
 
-To run:
+Run the development server:
 
 ```bash
-bun run index.ts
+bun run dev
 ```
 
-This project was created using `bun init` in bun v1.3.6. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Build the frontend:
+
+```bash
+bun run build
+```
+
+Preview the production bundle:
+
+```bash
+bun run preview
+```

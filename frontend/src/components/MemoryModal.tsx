@@ -1,3 +1,4 @@
+import { AsyncContent } from './AsyncState';
 import { formatValue, MemorySummary } from './planeData';
 import { SkeletonCardList } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
@@ -41,31 +42,31 @@ export function MemoryModal({ isLoading, items, listError, onClose, onRefresh }:
           </div>
 
           <div className="memory-list">
-            {isLoading && items.length === 0 && (
-              <div className="loading-shell">
-                <div className="data-state">{t('memory.loading')}</div>
-                <SkeletonCardList cards={4} lines={3} />
-              </div>
-            )}
-            {!isLoading && listError && <div className="data-state data-state-error">{listError}</div>}
-            {!isLoading && !listError && items.length === 0 && <div className="data-state">{t('memory.empty')}</div>}
-
-            {items.map((item) => (
-              <article key={item.id} className="memory-card">
-                <div className="memory-card-header">
-                  <div className="memory-card-title-group">
-                    <span className="memory-card-category">{item.category}</span>
-                    <span className="memory-card-id">{item.id}</span>
+            <AsyncContent
+              emptyMessage={t('memory.empty')}
+              error={listError}
+              hasContent={items.length > 0}
+              loading={isLoading}
+              loadingMessage={t('memory.loading')}
+              skeleton={<SkeletonCardList cards={4} lines={3} />}
+            >
+              {items.map((item) => (
+                <article key={item.id} className="memory-card">
+                  <div className="memory-card-header">
+                    <div className="memory-card-title-group">
+                      <span className="memory-card-category">{item.category}</span>
+                      <span className="memory-card-id">{item.id}</span>
+                    </div>
+                    {item.updatedAt && <span className="memory-card-time">{item.updatedAt}</span>}
                   </div>
-                  {item.updatedAt && <span className="memory-card-time">{item.updatedAt}</span>}
-                </div>
-                <div className="memory-card-content">{item.content}</div>
-                <details className="memory-card-details">
-                  <summary>{t('memory.raw_json')}</summary>
-                  <pre className="data-json">{formatValue(item.raw)}</pre>
-                </details>
-              </article>
-            ))}
+                  <div className="memory-card-content">{item.content}</div>
+                  <details className="memory-card-details">
+                    <summary>{t('memory.raw_json')}</summary>
+                    <pre className="data-json">{formatValue(item.raw)}</pre>
+                  </details>
+                </article>
+              ))}
+            </AsyncContent>
           </div>
         </div>
       </div>

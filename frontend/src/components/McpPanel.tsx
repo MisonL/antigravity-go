@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AsyncContent, StateMessage } from './AsyncState';
 import { SkeletonCardList, SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
+import { buildTokenQuery } from '../domains/types';
 
 interface McpToolInfo {
   name: string;
@@ -83,9 +85,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
   const [formArgs, setFormArgs] = useState('');
   const [formEnv, setFormEnv] = useState('');
 
-  const suffix = useMemo(() => (
-    token ? `?token=${encodeURIComponent(token)}` : ''
-  ), [token]);
+  const suffix = useMemo(() => buildTokenQuery(token), [token]);
 
   const fetchServers = useCallback(async () => {
     setLoading(true);
@@ -225,50 +225,51 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
               <span className={`badge ${capabilities.invoke?.supported ? 'success' : 'error'}`}>Invoke: {capabilities.invoke?.requested ?? '-'}</span>
             </div>
 
-            {warning && <div className="data-state">{warning}</div>}
-            {error && <div className="data-state data-state-error">{error}</div>}
-            {loading && servers.length === 0 && (
-              <div className="loading-shell">
-                <div className="data-state">{t('mcp.loading')}</div>
-                <SkeletonCardList cards={3} lines={3} />
-              </div>
-            )}
-            {!loading && servers.length === 0 && <div className="data-state">{t('mcp.empty')}</div>}
+            <StateMessage message={warning} />
+            <StateMessage kind="error" message={error} />
 
             <div className="mcp-server-list">
-              {servers.map((server) => (
-                <article key={server.name} className="mcp-server-card">
-                  <div className="mcp-server-card__header">
-                    <div>
-                      <div className="mcp-server-card__title">{server.name}</div>
-                      <div className="mcp-server-card__meta">
-                        {server.command || t('mcp.command.hidden')} {server.status ? `| ${server.status}` : ''}
-                      </div>
-                    </div>
-                    <span className="badge info">tools: {server.tool_count}</span>
-                  </div>
-
-                  {server.args && server.args.length > 0 && (
-                    <pre className="data-json">{JSON.stringify(server.args, null, 2)}</pre>
-                  )}
-
-                  {server.tools && server.tools.length > 0 && (
-                    <div className="mcp-tool-list">
-                      {server.tools.slice(0, 6).map((tool) => (
-                        <div key={`${server.name}-${tool.name}`} className="mcp-tool-chip">
-                          {tool.name}
+              <AsyncContent
+                emptyMessage={t('mcp.empty')}
+                hasContent={servers.length > 0}
+                loading={loading}
+                loadingMessage={t('mcp.loading')}
+                skeleton={<SkeletonCardList cards={3} lines={3} />}
+              >
+                {servers.map((server) => (
+                  <article key={server.name} className="mcp-server-card">
+                    <div className="mcp-server-card__header">
+                      <div>
+                        <div className="mcp-server-card__title">{server.name}</div>
+                        <div className="mcp-server-card__meta">
+                          {server.command || t('mcp.command.hidden')} {server.status ? `| ${server.status}` : ''}
                         </div>
-                      ))}
+                      </div>
+                      <span className="badge info">tools: {server.tool_count}</span>
                     </div>
-                  )}
 
-                  <div className="mcp-server-card__actions">
-                    <button type="button" className="btn-secondary" onClick={() => fillForm(server)}>{t('mcp.form.load')}</button>
-                    <button type="button" className="btn-secondary" onClick={() => restartServer(server.name)} disabled={saving}>{t('mcp.action.restart')}</button>
-                    <button type="button" className="btn-secondary btn-danger" onClick={() => deleteServer(server.name)} disabled={saving}>{t('mcp.action.delete')}</button>
-                  </div>
-                </article>
-              ))}
+                    {server.args && server.args.length > 0 && (
+                      <pre className="data-json">{JSON.stringify(server.args, null, 2)}</pre>
+                    )}
+
+                    {server.tools && server.tools.length > 0 && (
+                      <div className="mcp-tool-list">
+                        {server.tools.slice(0, 6).map((tool) => (
+                          <div key={`${server.name}-${tool.name}`} className="mcp-tool-chip">
+                            {tool.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mcp-server-card__actions">
+                      <button type="button" className="btn-secondary" onClick={() => fillForm(server)}>{t('mcp.form.load')}</button>
+                      <button type="button" className="btn-secondary" onClick={() => restartServer(server.name)} disabled={saving}>{t('mcp.action.restart')}</button>
+                      <button type="button" className="btn-secondary btn-danger" onClick={() => deleteServer(server.name)} disabled={saving}>{t('mcp.action.delete')}</button>
+                    </div>
+                  </article>
+                ))}
+              </AsyncContent>
             </div>
           </section>
 
