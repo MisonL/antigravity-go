@@ -17,42 +17,44 @@ func NewTrajectoryManager(client *rpc.Client) *TrajectoryManager {
 
 // List loads all trajectories from Core's Trajectory Plane.
 func (m *TrajectoryManager) List() (map[string]interface{}, error) {
-	if m == nil || m.client == nil {
-		return nil, fmt.Errorf("trajectory manager is not initialized")
-	}
-	return m.client.GetAllCascadeTrajectories()
+	return withManagerClient("trajectory manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.GetAllCascadeTrajectories()
+	})
 }
 
 // Get loads a single trajectory by ID.
 func (m *TrajectoryManager) Get(id string) (map[string]interface{}, error) {
-	if m == nil || m.client == nil {
-		return nil, fmt.Errorf("trajectory manager is not initialized")
+	if err := requireNonEmpty(id, "trajectory id"); err != nil {
+		return nil, err
 	}
-	if id == "" {
-		return nil, fmt.Errorf("trajectory id is required")
-	}
-	return m.client.GetCascadeTrajectory(id)
+	return withManagerClient("trajectory manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.GetCascadeTrajectory(id)
+	})
 }
 
 // Export converts a trajectory to markdown and returns the markdown body.
 func (m *TrajectoryManager) Export(id string) (string, error) {
-	if m == nil || m.client == nil {
-		return "", fmt.Errorf("trajectory manager is not initialized")
-	}
-	if id == "" {
-		return "", fmt.Errorf("trajectory id is required")
+	if err := requireNonEmpty(id, "trajectory id"); err != nil {
+		return "", err
 	}
 
-	resp, err := m.client.ConvertTrajectoryToMarkdown(id)
+	resp, err := withManagerClient("trajectory manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.ConvertTrajectoryToMarkdown(id)
+	})
 	if err != nil {
 		return "", err
 	}
 
-	for _, key := range []string{"markdown", "content", "text"} {
-		if value, ok := resp[key].(string); ok && value != "" {
-			return value, nil
-		}
+	if markdown := firstNonEmptyString(resp, "markdown", "content", "text"); markdown != "" {
+		return markdown, nil
 	}
 
 	return "", fmt.Errorf("trajectory markdown missing in response")
+}
+
+func (m *TrajectoryManager) getClient() *rpc.Client {
+	if m == nil {
+		return nil
+	}
+	return m.client
 }

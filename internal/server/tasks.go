@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -30,8 +29,7 @@ type taskSummaryResponse struct {
 }
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -43,8 +41,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := summarizeTasks(records)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	writeJSON(w, response)
 }
 
 func (s *Server) taskStoreRoot() string {

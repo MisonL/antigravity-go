@@ -1,8 +1,6 @@
 package corecap
 
 import (
-	"fmt"
-
 	"github.com/mison/antigravity-go/internal/rpc"
 )
 
@@ -17,11 +15,17 @@ func NewWorkspaceManager(client *rpc.Client) *WorkspaceManager {
 
 // Track registers a workspace root so the kernel can manage incremental awareness.
 func (m *WorkspaceManager) Track(root string) (map[string]interface{}, error) {
-	if m == nil || m.client == nil {
-		return nil, fmt.Errorf("workspace manager is not initialized")
+	if err := requireNonEmpty(root, "workspace root"); err != nil {
+		return nil, err
 	}
-	if root == "" {
-		return nil, fmt.Errorf("workspace root is required")
+	return withManagerClient("workspace manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.AddTrackedWorkspace(root)
+	})
+}
+
+func (m *WorkspaceManager) getClient() *rpc.Client {
+	if m == nil {
+		return nil
 	}
-	return m.client.AddTrackedWorkspace(root)
+	return m.client
 }

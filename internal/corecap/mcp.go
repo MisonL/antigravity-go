@@ -48,11 +48,15 @@ func NewMcpManager(client *rpc.Client) *McpManager {
 	return &McpManager{client: client}
 }
 
-func (m *McpManager) requireClient() error {
-	if m == nil || m.client == nil {
-		return fmt.Errorf("mcp manager is not initialized")
+func (m *McpManager) getClient() *rpc.Client {
+	if m == nil {
+		return nil
 	}
-	return nil
+	return m.client
+}
+
+func (m *McpManager) requireClient() error {
+	return requireClient("mcp manager", managerClient(m))
 }
 
 func (m *McpManager) Capabilities() rpc.McpRPCSupport {
@@ -107,9 +111,10 @@ func (m *McpManager) DeleteServer(name string) (map[string]interface{}, error) {
 	if err := m.requireClient(); err != nil {
 		return nil, err
 	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, fmt.Errorf("server name is required")
+	var err error
+	name, err = normalizedRequired(name, "server name")
+	if err != nil {
+		return nil, err
 	}
 
 	cfg, err := m.currentConfig()
@@ -140,9 +145,10 @@ func (m *McpManager) RestartServer(name string) (map[string]interface{}, error) 
 	if err := m.requireClient(); err != nil {
 		return nil, err
 	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, fmt.Errorf("server name is required")
+	var err error
+	name, err = normalizedRequired(name, "server name")
+	if err != nil {
+		return nil, err
 	}
 
 	caps := m.Capabilities()
@@ -175,11 +181,14 @@ func (m *McpManager) InvokeTool(serverName, toolName string, args map[string]int
 	if err := m.requireClient(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(serverName) == "" {
-		return nil, fmt.Errorf("server name is required")
+	var err error
+	serverName, err = normalizedRequired(serverName, "server name")
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(toolName) == "" {
-		return nil, fmt.Errorf("tool name is required")
+	toolName, err = normalizedRequired(toolName, "tool name")
+	if err != nil {
+		return nil, err
 	}
 
 	resp, err := m.client.InvokeMcpTool(map[string]interface{}{
@@ -276,13 +285,14 @@ func (m *McpManager) currentConfig() (mcpConfigFile, error) {
 }
 
 func normalizeServerSpec(spec McpServerSpec) (McpServerSpec, error) {
-	spec.Name = strings.TrimSpace(spec.Name)
-	spec.Command = strings.TrimSpace(spec.Command)
-	if spec.Name == "" {
-		return spec, fmt.Errorf("server name is required")
+	var err error
+	spec.Name, err = normalizedRequired(spec.Name, "server name")
+	if err != nil {
+		return spec, err
 	}
-	if spec.Command == "" {
-		return spec, fmt.Errorf("server command is required")
+	spec.Command, err = normalizedRequired(spec.Command, "server command")
+	if err != nil {
+		return spec, err
 	}
 
 	env := map[string]string{}
@@ -465,13 +475,4 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

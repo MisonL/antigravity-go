@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -28,8 +27,9 @@ const (
 )
 
 func NewSetupModel(defaultProvider string) SetupModel {
+	localizer := tuiLocalizer()
 	pi := textinput.New()
-	pi.Placeholder = "openai / gemini / anthropic / ollama / lmstudio"
+	pi.Placeholder = localizer.T("tui.setup.provider.placeholder")
 	pi.SetValue(defaultProvider)
 	pi.Focus()
 	pi.CharLimit = 40
@@ -37,14 +37,14 @@ func NewSetupModel(defaultProvider string) SetupModel {
 	pi.Prompt = "Provider > "
 
 	ki := textinput.New()
-	ki.Placeholder = "输入您的 API Key (本地模型可为空)"
+	ki.Placeholder = localizer.T("tui.setup.key.placeholder")
 	ki.CharLimit = 150
 	ki.Width = 60
 	ki.Prompt = "API Key  > "
 	ki.EchoMode = textinput.EchoPassword
 
 	ui := textinput.New()
-	ui.Placeholder = "自定义 Base URL (例如 http://localhost:11434/v1)"
+	ui.Placeholder = localizer.T("tui.setup.url.placeholder")
 	ui.CharLimit = 150
 	ui.Width = 60
 	ui.Prompt = "Base URL > "
@@ -113,31 +113,32 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m SetupModel) View() string {
+	localizer := tuiLocalizer()
 	if m.Quitting {
-		return "初始化已取消。\n"
+		return localizer.T("tui.setup.cancelled")
 	}
 	if m.step == stepDone {
-		return fmt.Sprintf("配置完成！即将使用 %s 渠道。\n", m.Provider)
+		return localizer.T("tui.setup.completed", m.Provider)
 	}
 
 	s := strings.Builder{}
-	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("🚀 Antigravity Go 初始化向导"))
+	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render(localizer.T("tui.setup.title")))
 	s.WriteString("\n\n")
 
 	switch m.step {
 	case stepProvider:
-		s.WriteString("步骤 1: 选择 AI 渠道类型\n")
-		s.WriteString("(支持 openai, gemini, anthropic, ollama, lmstudio)\n")
+		s.WriteString(localizer.T("tui.setup.step.provider"))
+		s.WriteString(localizer.T("tui.setup.step.provider.hint"))
 		s.WriteString(m.providerInput.View())
 	case stepAPIKey:
-		s.WriteString("步骤 2: 输入 API 密钥 (API Key)\n")
+		s.WriteString(localizer.T("tui.setup.step.key"))
 		s.WriteString(m.keyInput.View())
 	case stepBaseURL:
-		s.WriteString("步骤 3: 配置接口地址 (Base URL)\n")
-		s.WriteString("(留空使用官方默认地址)\n")
+		s.WriteString(localizer.T("tui.setup.step.url"))
+		s.WriteString(localizer.T("tui.setup.step.url.hint"))
 		s.WriteString(m.urlInput.View())
 	}
 
-	s.WriteString("\n\n（Esc 退出）\n")
+	s.WriteString(localizer.T("tui.setup.exit_hint"))
 	return s.String()
 }

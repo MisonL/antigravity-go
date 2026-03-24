@@ -1,8 +1,6 @@
 package corecap
 
 import (
-	"fmt"
-
 	"github.com/mison/antigravity-go/internal/rpc"
 )
 
@@ -17,22 +15,27 @@ func NewVersioningManager(client *rpc.Client) *VersioningManager {
 
 // GenerateCommit asks Core to generate a commit message from a diff.
 func (m *VersioningManager) GenerateCommit(diff string) (map[string]interface{}, error) {
-	if m == nil || m.client == nil {
-		return nil, fmt.Errorf("versioning manager is not initialized")
+	if err := requireNonEmpty(diff, "diff"); err != nil {
+		return nil, err
 	}
-	if diff == "" {
-		return nil, fmt.Errorf("diff is required")
-	}
-	return m.client.GenerateCommitMessage(diff)
+	return withManagerClient("versioning manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.GenerateCommitMessage(diff)
+	})
 }
 
 // Rollback asks Core to revert the workspace to the given cascade step.
 func (m *VersioningManager) Rollback(stepID string) (map[string]interface{}, error) {
-	if m == nil || m.client == nil {
-		return nil, fmt.Errorf("versioning manager is not initialized")
+	if err := requireNonEmpty(stepID, "step id"); err != nil {
+		return nil, err
 	}
-	if stepID == "" {
-		return nil, fmt.Errorf("step id is required")
+	return withManagerClient("versioning manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.RevertToCascadeStep(stepID)
+	})
+}
+
+func (m *VersioningManager) getClient() *rpc.Client {
+	if m == nil {
+		return nil
 	}
-	return m.client.RevertToCascadeStep(stepID)
+	return m.client
 }

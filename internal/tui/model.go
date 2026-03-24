@@ -102,7 +102,7 @@ type Model struct {
 type PermissionRequest struct {
 	ToolName string
 	Args     string
-	Response chan bool
+	Response chan agent.PermissionDecision
 }
 
 type PermissionMsg PermissionRequest
@@ -110,7 +110,7 @@ type PermissionMsg PermissionRequest
 // NewModel creates a new TUI model.
 func NewModel(host *core.Host, client *rpc.Client, agt *agent.Agent, permChan chan PermissionRequest, approvalMode string, rec *session.Recorder) Model {
 	ta := textarea.New()
-	ta.Placeholder = "输入任务或问题（支持 /help）..."
+	ta.Placeholder = tuiLocalizer().T("tui.input.placeholder")
 	ta.Focus()
 	ta.SetWidth(80)
 	ta.SetHeight(3)
@@ -139,13 +139,7 @@ func NewModel(host *core.Host, client *rpc.Client, agt *agent.Agent, permChan ch
 				if msg.Role == llm.RoleSystem {
 					continue
 				}
-				prefix := "🤖 "
-				switch msg.Role {
-				case llm.RoleUser:
-					prefix = "👤 "
-				case llm.RoleTool:
-					prefix = "🛠️ "
-				}
+				prefix := m.rolePrefix(msg.Role)
 				rendered, err := glamour.Render(prefix+msg.Content, "light")
 				if err != nil {
 					rendered = prefix + msg.Content
@@ -182,16 +176,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.askingPermission {
 			switch msg.String() {
 			case "y", "Y":
-				m.currentPermRequest.Response <- true
+				m.currentPermRequest.Response <- agent.PermissionDecision{Allow: true}
 				m.askingPermission = false
 				m.currentPermRequest = nil
-				m.addMessage("✅ 已允许")
+				m.addMessage(m.t("tui.permission.allowed"))
 				return m, waitForPermission(m.permReqChan)
 			case "n", "N":
-				m.currentPermRequest.Response <- false
+				m.currentPermRequest.Response <- agent.PermissionDecision{Allow: false}
 				m.askingPermission = false
 				m.currentPermRequest = nil
-				m.addMessage("❌ 已拒绝")
+				m.addMessage(m.t("tui.permission.denied"))
 				return m, waitForPermission(m.permReqChan)
 			default:
 				return m, nil // Ignore other keys
@@ -299,7 +293,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentRawResponse = ""
 		// Start a new empty message bubble for the assistant
 		// We'll update this slot as tokens arrive
-		m.addMessage("🤖 ")
+		m.addMessage(m.rolePrefix(llm.RoleAssistant))
 		return m, waitForStream(m.currentStreamChan)
 
 	case StreamTokenMsg:
@@ -308,7 +302,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Re-render the last message (the one we added in StreamStarted)
 		// This is expensive but fine for TUI rates.
-		rendered, err := glamour.Render("🤖 "+m.currentRawResponse, "light")
+		rendered, err := glamour.Render(m.rolePrefix(llm.RoleAssistant)+m.currentRawResponse, "light")
 		if err == nil {
 			if len(m.messages) > 0 {
 				m.messages[len(m.messages)-1] = rendered
@@ -324,7 +318,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StreamErrorMsg:
 		m.thinking = false
-		m.addMessage(fmt.Sprintf("\n> ❌ **错误**：%v", msg))
+		m.addMessage(m.t("tui.error.message", msg))
 		if m.rec != nil {
 			_ = m.rec.Append("chat_error", map[string]any{
 				"error":   fmt.Sprint(msg),
@@ -349,9 +343,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CompactDoneMsg:
 		m.thinking = false
 		if msg.Err != nil {
-			m.addMessage(fmt.Sprintf("⚠️ 压缩失败：%v", msg.Err))
+			m.addMessage(m.t("tui.context.compact_failed", msg.Err))
 		} else {
-			m.addMessage("✅ 已压缩上下文（保留关键结论）")
+			m.addMessage(m.t("tui.context.compact_done"))
 		}
 		return m, nil
 
@@ -361,8 +355,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentPermRequest = (*PermissionRequest)(&msg)
 
 		// Create a nice prompt
-		prompt := fmt.Sprintf("🛡️ **需要授权**\n\n工具：`%s`\n参数：`%s`\n\n允许执行？[y/N]",
-			msg.ToolName, msg.Args)
+		prompt := m.t("tui.permission.prompt", msg.ToolName, msg.Args)
 		m.addMessage(prompt)
 		// We do NOT wait for next permission here, we wait after user handles it
 	}
@@ -440,7 +433,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // processInput handles user input.
 func (m *Model) processInput(input string) tea.Cmd {
-	m.addMessage("👤 " + input)
+	m.addMessage(m.rolePrefix(llm.RoleUser) + input)
 	if m.rec != nil {
 		_ = m.rec.Append("user_message", map[string]any{"content": input})
 	}
@@ -453,7 +446,7 @@ func (m *Model) processInput(input string) tea.Cmd {
 		return m.runAgentStream(input)
 	}
 
-	m.addMessage("⚠️ Agent 未初始化（可能缺少 API Key？）")
+	m.addMessage(m.t("tui.agent.not_initialized"))
 	return nil
 }
 
@@ -521,26 +514,26 @@ func (m *Model) handleSlashCommand(cmd string) tea.Cmd {
 	// Legacy handling or fuzzy fallback
 	switch cmdName {
 	case "/status": // Keep legacy if not in registry (though added above)
-		m.addMessage("📊 **状态**：Ready=" + fmt.Sprint(m.host.IsReady()))
+		m.addMessage(m.t("tui.command.status.summary", m.host.IsReady()))
 		return nil
 	case "/approvals":
 		// ... logic from before (move to registry later for cleaner code) ...
 		if len(parts) == 1 {
-			m.addMessage(fmt.Sprintf("🛡️ 当前 approvals: **%s**（可选：read-only / prompt / full）", m.approvalMode))
+			m.addMessage(m.t("tui.approvals.current", m.approvalMode))
 			return nil
 		}
 		mode := strings.ToLower(strings.TrimSpace(parts[1]))
 		// ... logic copy ...
 		m.approvalMode = mode // simplified for brevity in this tool call
-		m.addMessage("✅ approvals update (impl pending move to registry)")
+		m.addMessage(m.t("tui.command.approvals.updated", mode))
 		return nil
 	}
 
 	// Fuzzy matching
 	suggestion := findClosestCommand(cmdName, GetCommands())
-	msg := "未知命令：" + cmdName
+	msg := m.t("tui.command.unknown", cmdName)
 	if suggestion != "" {
-		msg += fmt.Sprintf("（你是指 **%s** 吗？）", suggestion)
+		msg += m.t("tui.command.suggestion", suggestion)
 	}
 	m.addMessage(msg)
 	return nil
@@ -555,6 +548,17 @@ func (m *Model) addMessage(markdown string) {
 	m.messages = append(m.messages, rendered)
 	m.viewport.SetContent(strings.Join(m.messages, ""))
 	m.viewport.GotoBottom()
+}
+
+func (m Model) rolePrefix(role llm.Role) string {
+	switch role {
+	case llm.RoleUser:
+		return "[" + m.t("tui.role.user") + "] "
+	case llm.RoleTool:
+		return "[" + m.t("tui.role.tool") + "] "
+	default:
+		return "[" + m.t("tui.role.assistant") + "] "
+	}
 }
 
 // View outputs the UI

@@ -55,7 +55,7 @@ func (idx *Indexer) ScanProject(ctx context.Context) error {
 	// Active check: Try to run fd --version
 	testCmd := exec.CommandContext(ctx, fdPath, "--version")
 	if err := testCmd.Run(); err != nil {
-		fmt.Printf("⚠️  fd detection failed (arch mismatch?): %v. Falling back to native walker.\n", err)
+		fmt.Printf("fd detection failed (arch mismatch?): %v. Falling back to native walker.\n", err)
 		return idx.scanProjectLegacy(ctx)
 	}
 

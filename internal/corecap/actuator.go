@@ -1,8 +1,6 @@
 package corecap
 
 import (
-	"fmt"
-
 	"github.com/mison/antigravity-go/internal/rpc"
 )
 
@@ -17,16 +15,25 @@ func NewActuatorManager(client *rpc.Client) *ActuatorManager {
 
 // PreviewEdit loads the patch preview for a pending edit request.
 func (m *ActuatorManager) PreviewEdit(req map[string]interface{}) (map[string]interface{}, error) {
-	if m == nil || m.client == nil {
-		return nil, fmt.Errorf("actuator manager is not initialized")
-	}
-	return m.client.GetPatchAndCodeChange(req)
+	return withManagerClient("actuator manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.GetPatchAndCodeChange(req)
+	})
 }
 
 // GetValidation loads the current validation state from Core.
 func (m *ActuatorManager) GetValidation() (map[string]interface{}, error) {
-	if m == nil || m.client == nil {
-		return nil, fmt.Errorf("actuator manager is not initialized")
+	return withManagerClient("actuator manager", m, func(client *rpc.Client) (map[string]interface{}, error) {
+		return client.GetCodeValidationStates()
+	})
+}
+
+func managerClient[T interface{ getClient() *rpc.Client }](manager T) *rpc.Client {
+	return manager.getClient()
+}
+
+func (m *ActuatorManager) getClient() *rpc.Client {
+	if m == nil {
+		return nil
 	}
-	return m.client.GetCodeValidationStates()
+	return m.client
 }

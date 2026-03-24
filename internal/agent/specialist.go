@@ -21,7 +21,6 @@ type ReviewerAssessmentInput struct {
 	Passed           bool
 }
 
-
 func (a *Agent) GetSpecialistTool() tools.Tool {
 	return tools.Tool{
 		Definition: llm.ToolDefinition{

@@ -112,7 +112,7 @@ func (s *Server) Start() error {
 	if s.hostAddr != "127.0.0.1" && s.hostAddr != "localhost" && s.hostAddr != "::1" {
 		// Docker 场景：允许绑定 0.0.0.0/::，但必须开启 token 鉴权
 		if s.hostAddr == "0.0.0.0" || s.hostAddr == "::" {
-			if strings.TrimSpace(s.authToken) == "" {
+			if !s.hasAuthToken() {
 				return fmt.Errorf("binding to %q requires --token to be set, otherwise remote execution risk is too high", s.hostAddr)
 			}
 			log.Printf("web console bound to %s with token auth enabled; do not expose this port on untrusted networks", s.hostAddr)
@@ -303,8 +303,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"core_port":   s.host.HTTPPort(),
 		"token_usage": tokenUsage,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	writeJSON(w, status)
 }
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	s.cfgMu.RLock()
@@ -318,13 +317,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if len(displayCfg.APIKey) > 8 {
 			displayCfg.APIKey = displayCfg.APIKey[:4] + "..." + displayCfg.APIKey[len(displayCfg.APIKey)-4:]
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(displayCfg)
+		writeJSON(w, displayCfg)
 
 	case http.MethodPost:
 		var newCfg config.Config
-		if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
+		if !decodeJSONBody(w, r, &newCfg, "invalid request body") {
 			return
 		}
 
@@ -347,8 +344,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		s.cfg = cfg
 		s.cfgMu.Unlock()
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		writeJSON(w, map[string]string{"status": "ok"})
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -357,10 +353,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	// 兼容接口：返回指定 session 或最近一次 session 的消息
-	w.Header().Set("Content-Type", "application/json")
-
 	if s.sessionsRoot == "" {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		writeJSON(w, map[string]interface{}{
 			"status":   "ok",
 			"messages": []interface{}{},
 		})
@@ -371,7 +365,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		metas, err := session.List(s.sessionsRoot)
 		if err != nil || len(metas) == 0 {
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			writeJSON(w, map[string]interface{}{
 				"status":   "ok",
 				"messages": []interface{}{},
 			})
@@ -382,7 +376,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := session.Load(s.sessionsRoot, id)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		writeJSON(w, map[string]interface{}{
 			"status":   "ok",
 			"messages": []interface{}{},
 		})
@@ -392,13 +386,13 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	msgs, err := rec.LoadMessages()
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		writeJSON(w, map[string]interface{}{
 			"status":   "ok",
 			"messages": []interface{}{},
 		})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status":     "ok",
 		"session_id": id,
 		"messages":   msgs,
@@ -406,13 +400,11 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	if s.sessionsRoot == "" {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]session.Metadata{})
+		writeJSON(w, []session.Metadata{})
 		return
 	}
 
@@ -421,8 +413,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(metas)
+	writeJSON(w, metas)
 }
 
 type sessionResumeRequest struct {
@@ -439,20 +430,17 @@ type sessionResumeResponse struct {
 }
 
 func (s *Server) handleSessionResume(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	var req sessionResumeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, "invalid request body") {
 		return
 	}
 
-	trajectoryID := strings.TrimSpace(req.TrajectoryID)
-	if trajectoryID == "" {
-		http.Error(w, "trajectory_id is required", http.StatusBadRequest)
+	trajectoryID, ok := requireTrimmedValue(w, req.TrajectoryID, "trajectory_id")
+	if !ok {
 		return
 	}
 
@@ -467,8 +455,7 @@ func (s *Server) handleSessionResume(w http.ResponseWriter, r *http.Request) {
 		messages = append(messages, msg)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sessionResumeResponse{
+	writeJSON(w, sessionResumeResponse{
 		Status:       "ok",
 		TrajectoryID: trajectoryID,
 		Workspace:    snapshot.WorkspaceRoot,
@@ -479,28 +466,12 @@ func (s *Server) handleSessionResume(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTrajectories(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if s.client == nil {
-		writeEmptyJSONArray(w)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	manager := corecap.NewTrajectoryManager(s.client)
-	trajectories, err := manager.List()
-	if err != nil {
-		if isDeprecatedPlaneRPCError(err) {
-			writeEmptyJSONArray(w)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(trajectories)
+	s.respondPlanePayload(w, manager.List)
 }
 
 func (s *Server) handleTrajectoryDetail(w http.ResponseWriter, r *http.Request) {
@@ -522,8 +493,7 @@ func (s *Server) handleTrajectoryDetail(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(trajectory)
+	writeJSON(w, trajectory)
 }
 
 func (s *Server) trajectoryGetter() session.TrajectoryGetter {
@@ -536,7 +506,7 @@ func (s *Server) trajectoryGetter() session.TrajectoryGetter {
 func (s *Server) buildResumeRedirectURL(r *http.Request, trajectoryID string) string {
 	values := url.Values{}
 	values.Set("resume_trajectory", trajectoryID)
-	if strings.TrimSpace(s.authToken) != "" {
+	if s.hasAuthToken() {
 		values.Set("token", s.authToken)
 	}
 	return (&url.URL{
@@ -550,7 +520,7 @@ func (s *Server) buildResumeRedirectURL(r *http.Request, trajectoryID string) st
 func (s *Server) buildResumeWebSocketURL(r *http.Request, trajectoryID string) string {
 	values := url.Values{}
 	values.Set("resume_trajectory", trajectoryID)
-	if strings.TrimSpace(s.authToken) != "" {
+	if s.hasAuthToken() {
 		values.Set("token", s.authToken)
 	}
 
@@ -577,28 +547,14 @@ func (s *Server) externalScheme(r *http.Request) string {
 }
 
 func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if s.client == nil {
-		writeEmptyJSONArray(w)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	manager := corecap.NewMemoryManager(s.client)
-	memories, err := manager.Query(nil)
-	if err != nil {
-		if isDeprecatedPlaneRPCError(err) {
-			writeEmptyJSONArray(w)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(memories)
+	s.respondPlanePayload(w, func() (map[string]interface{}, error) {
+		return manager.Query(nil)
+	})
 }
 
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
@@ -631,8 +587,7 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(msgs)
+		writeJSON(w, msgs)
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 	}
@@ -670,8 +625,7 @@ func (s *Server) handleFSTree(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tree)
+	writeJSON(w, tree)
 }
 
 func buildFileTree(workspaceRootAbs string, absPath string, depth int, maxDepth int) (*FileNode, error) {
@@ -758,8 +712,7 @@ func (s *Server) handleFSContent(w http.ResponseWriter, r *http.Request) {
 		}
 		rel = filepath.ToSlash(rel)
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		writeJSON(w, map[string]string{
 			"path":    rel,
 			"content": string(content),
 		})
@@ -793,8 +746,7 @@ func (s *Server) handleFSContent(w http.ResponseWriter, r *http.Request) {
 			"type": "file_change",
 			"path": rel,
 		})
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		writeJSON(w, map[string]string{"status": "ok"})
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -835,8 +787,7 @@ func (s *Server) handleLSPHover(w http.ResponseWriter, r *http.Request) {
 
 	// 将 LSP Hover 结构转成 Monaco 友好的 markdown 字段
 	markdown := extractHoverMarkdown([]byte(res))
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"markdown": markdown})
+	writeJSON(w, map[string]string{"markdown": markdown})
 }
 
 func (s *Server) handleLSPSymbols(w http.ResponseWriter, r *http.Request) {

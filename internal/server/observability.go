@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -29,8 +28,7 @@ type rollbackStepRequest struct {
 }
 
 func (s *Server) handleObservabilitySummary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -75,28 +73,24 @@ func (s *Server) handleObservabilitySummary(w http.ResponseWriter, r *http.Reque
 		GeneratedAt: time.Now().Format(time.RFC3339),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(summary)
+	writeJSON(w, summary)
 }
 
 func (s *Server) handleRollbackStep(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	var req rollbackStepRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, "invalid json body") {
 		return
 	}
-	req.StepID = strings.TrimSpace(req.StepID)
-	if req.StepID == "" {
-		http.Error(w, "step_id is required", http.StatusBadRequest)
+	stepID, ok := requireTrimmedValue(w, req.StepID, "step_id")
+	if !ok {
 		return
 	}
 
-	result, err := corecap.NewVersioningManager(s.client).Rollback(req.StepID)
+	result, err := corecap.NewVersioningManager(s.client).Rollback(stepID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -105,30 +99,24 @@ func (s *Server) handleRollbackStep(w http.ResponseWriter, r *http.Request) {
 	if s.ws != nil {
 		s.ws.BroadcastObservabilityEvent(s.ws.defaultLocale, "rollback_to_step", "completed", map[string]interface{}{
 			"source":  "rest_api",
-			"step_id": req.StepID,
+			"step_id": stepID,
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":      true,
-		"step_id": req.StepID,
+		"step_id": stepID,
 		"result":  result,
 	})
 }
 
 func (s *Server) handleVisualSelfTestSample(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	targetURL := buildDashboardURL(r)
-	locale := "zh-CN"
-	if s.ws != nil && strings.TrimSpace(s.ws.defaultLocale) != "" {
-		locale = s.ws.defaultLocale
-	}
-	localizer := i18n.MustLocalizer(locale)
+	localizer := i18n.MustLocalizer(s.defaultLocale())
 	taskLines := []string{
 		localizer.T("server.visual_test.task.intro"),
 		localizer.T("server.visual_test.task.open", targetURL),
@@ -153,8 +141,7 @@ func (s *Server) handleVisualSelfTestSample(w http.ResponseWriter, r *http.Reque
 		{"label": localizer.T("server.visual_test.label.trajectory_detail"), "selector": `[data-testid="trajectory-detail"]`},
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"title":     localizer.T("server.visual_test.title"),
 		"url":       targetURL,
 		"task":      strings.Join(taskLines, "\n"),
@@ -169,12 +156,17 @@ func buildDashboardURL(r *http.Request) string {
 	}
 
 	base := fmt.Sprintf("%s://%s/", scheme, r.Host)
-	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	if token == "" {
+	token, ok := requireDashboardToken(r)
+	if !ok {
 		return base
 	}
 
 	values := url.Values{}
 	values.Set("token", token)
 	return base + "?" + values.Encode()
+}
+
+func requireDashboardToken(r *http.Request) (string, bool) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	return token, token != ""
 }

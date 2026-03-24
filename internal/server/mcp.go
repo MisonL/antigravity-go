@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -28,8 +27,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		s.respondMCPState(w, "")
 	case http.MethodPost, http.MethodPut, http.MethodDelete:
 		var req mcpServerRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
+		if !decodeJSONBody(w, r, &req, "invalid request body") {
 			return
 		}
 
@@ -62,8 +60,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		}
 		resp["capabilities"] = s.mcp.Capabilities()
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		writeJSON(w, resp)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -84,8 +81,7 @@ func (s *Server) respondMCPState(w http.ResponseWriter, warning string) {
 		payload["warning"] = warning
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(payload)
+	writeJSON(w, payload)
 }
 
 func (s *Server) refreshDynamicMcpTools() error {

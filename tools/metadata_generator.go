@@ -96,7 +96,7 @@ func generateEmptyMetadata() []byte {
 
 // testMetadataMessage 测试 metadata 消息
 func testMetadataMessage(metadata []byte, name string) bool {
-	fmt.Printf("\n🧪 测试 %s...\n", name)
+	fmt.Printf("\n[Test] %s...\n", name)
 	fmt.Printf("  消息内容 (hex): %x\n", metadata)
 
 	// 启动 antigravity_core
@@ -109,31 +109,31 @@ func testMetadataMessage(metadata []byte, name string) bool {
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		fmt.Printf("  ❌ 错误: %v\n", err)
+		fmt.Printf("  Error: %v\n", err)
 		return false
 	}
 
 	_, err = cmd.StdoutPipe()
 	if err != nil {
-		fmt.Printf("  ❌ 错误: %v\n", err)
+		fmt.Printf("  Error: %v\n", err)
 		return false
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		fmt.Printf("  ❌ 错误: %v\n", err)
+		fmt.Printf("  Error: %v\n", err)
 		return false
 	}
 
 	if err := cmd.Start(); err != nil {
-		fmt.Printf("  ❌ 错误: %v\n", err)
+		fmt.Printf("  Error: %v\n", err)
 		return false
 	}
 
 	// 发送 metadata 消息
 	_, err = stdin.Write(metadata)
 	if err != nil {
-		fmt.Printf("  ❌ 写入错误: %v\n", err)
+		fmt.Printf("  Write error: %v\n", err)
 		cmd.Process.Kill()
 		return false
 	}
@@ -152,27 +152,27 @@ func testMetadataMessage(metadata []byte, name string) bool {
 
 	// 检查是否成功
 	if bytes.Contains(stderrBytes, []byte("metadata cannot be empty")) {
-		fmt.Println("  ❌ 失败: metadata cannot be empty")
+		fmt.Println("  Failed: metadata cannot be empty")
 		cmd.Process.Kill()
 		return false
 	}
 
 	if bytes.Contains(stderrBytes, []byte("Language server listening")) ||
 		bytes.Contains(stderrBytes, []byte("Language server will attempt")) {
-		fmt.Println("  ✅ 成功!")
+		fmt.Println("  Success")
 		cmd.Process.Kill()
 		return true
 	}
 
 	if bytes.Contains(stderrBytes, []byte("Failed to unmarshal")) {
-		fmt.Println("  ❌ 失败: 无法解析 Protobuf")
+		fmt.Println("  Failed: protobuf could not be decoded")
 		cmd.Process.Kill()
 		return false
 	}
 
 	// 检查进程是否还在运行
 	if cmd.Process != nil && cmd.ProcessState == nil {
-		fmt.Println("  ⚠️ 进程仍在运行，可能成功")
+		fmt.Println("  Process still running, likely success")
 		cmd.Process.Kill()
 		return true
 	}
@@ -193,7 +193,7 @@ func min(a, b int) int {
 }
 
 func main() {
-	fmt.Println("🔨 生成和测试 Protobuf Metadata 消息")
+	fmt.Println("生成和测试 Protobuf Metadata 消息")
 
 	// 切换到正确的目录
 	os.Chdir("/Volumes/Work/code/antigravity-go/tools")
@@ -219,12 +219,12 @@ func main() {
 			time.Sleep(1 * time.Second)
 		}
 
-		fmt.Printf("\n📊 结果: %d/%d 成功\n", successCount, len(messages))
+		fmt.Printf("\nResult: %d/%d passed\n", successCount, len(messages))
 
 		if successCount > 0 {
-			fmt.Println("✅ 找到可用的 metadata 格式!")
+			fmt.Println("Found a usable metadata format.")
 		} else {
-			fmt.Println("❌ 所有测试都失败了")
+			fmt.Println("All metadata tests failed.")
 		}
 
 		done <- true
@@ -235,7 +235,7 @@ func main() {
 	case <-done:
 		// 正常完成
 	case <-time.After(60 * time.Second):
-		fmt.Println("⏰ 程序超时，强制退出")
+		fmt.Println("Timeout reached, forcing shutdown.")
 		exec.Command("pkill", "-9", "antigravity_core").Run()
 		os.Exit(1)
 	}

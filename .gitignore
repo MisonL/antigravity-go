@@ -10,9 +10,17 @@ tmp_build
 # Logs & Sessions
 *.log
 .agy_go/
+.agy-doctor/
+.agy-web-debug/
 agy_data/
+agy.new
+agy.verify
+.gotmp-verify/
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 .go-cache/
+.go-cache-*/
+.go-mod-cache/
+.gomodcache*/

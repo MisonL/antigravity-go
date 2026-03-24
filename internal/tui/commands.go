@@ -24,56 +24,56 @@ type CommandDefinition struct {
 var registry = map[string]CommandDefinition{
 	"/quit": {
 		Name:        "/quit",
-		Description: "退出程序",
+		Description: tuiLocalizer().T("tui.command.quit.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
-			m.addMessage("👋 再见！")
+			m.addMessage(m.t("tui.command.quit.message"))
 			return tea.Quit
 		},
 	},
 	"/exit": {
 		Name:        "/exit",
-		Description: "退出程序",
+		Description: tuiLocalizer().T("tui.command.quit.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
-			m.addMessage("👋 再见！")
+			m.addMessage(m.t("tui.command.quit.message"))
 			return tea.Quit
 		},
 	},
 	"/mode": {
 		Name:        "/mode",
-		Description: "切换 AI 模式 (coder/architect/chat)",
+		Description: tuiLocalizer().T("tui.command.mode.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			if len(args) < 1 {
-				m.addMessage("用法：/mode <coder|architect|chat>")
+				m.addMessage(m.t("tui.command.mode.usage"))
 				return nil
 			}
 			mode := strings.ToLower(args[0])
 			switch mode {
 			case "coder":
-				m.agent.SetSystemPrompt("You are an expert coder. Focus on implementation and code quality.")
+				m.agent.SetLocalizedSystemPrompt("coder")
 			case "architect":
-				m.agent.SetSystemPrompt("You are a software architect. Focus on high-level design and system patterns.")
+				m.agent.SetLocalizedSystemPrompt("architect")
 			case "chat":
-				m.agent.SetSystemPrompt("You are a helpful assistant. Chat casually.")
+				m.agent.SetLocalizedSystemPrompt("chat")
 			default:
-				m.addMessage("未知模式，可选：coder, architect, chat")
+				m.addMessage(m.t("tui.command.mode.invalid"))
 				return nil
 			}
-			m.addMessage(fmt.Sprintf("🔄 已切换模式为：**%s**", mode))
+			m.addMessage(m.t("tui.command.mode.updated", mode))
 			return nil
 		},
 	},
 	"/add": {
 		Name:        "/add",
-		Description: "添加文件到上下文",
+		Description: tuiLocalizer().T("tui.command.add.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			if len(args) < 1 {
-				m.addMessage("用法：/add <file_path>")
+				m.addMessage(m.t("tui.command.add.usage"))
 				return nil
 			}
 			path := args[0]
 			content, err := os.ReadFile(path)
 			if err != nil {
-				m.addMessage(fmt.Sprintf("❌ 读取失败：%v", err))
+				m.addMessage(m.t("tui.command.add.read_failed", err))
 				return nil
 			}
 
@@ -81,7 +81,7 @@ var registry = map[string]CommandDefinition{
 			// Usually adding context means adding a user message "Here is file X..."
 			// We handle this by simulating a user message but not rendering it fully to clean UI?
 			// Or just display it. Let's display a summary.
-			m.addMessage(fmt.Sprintf("📄 **已添加文件**：`%s` (%d bytes)", path, len(content)))
+			m.addMessage(m.t("tui.command.add.success", path, len(content)))
 
 			// Actually send to agent history silently
 			if m.agent != nil {
@@ -92,13 +92,13 @@ var registry = map[string]CommandDefinition{
 	},
 	"/copy": {
 		Name:        "/copy",
-		Description: "复制最后一段代码",
+		Description: tuiLocalizer().T("tui.command.copy.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			// Find last ai message
 			// This is tricky without parsing markdown.
 			// Ideally we store the raw last response.
 			if m.currentRawResponse == "" {
-				m.addMessage("⚠️ 没有可复制的代码内容（仅支持最近一次回复）")
+				m.addMessage(m.t("tui.command.copy.empty"))
 				return nil
 			}
 
@@ -106,7 +106,7 @@ var registry = map[string]CommandDefinition{
 			start := strings.Index(m.currentRawResponse, "```")
 			if start == -1 {
 				clipboard.WriteAll(m.currentRawResponse)
-				m.addMessage("✅ 已复制全部回复内容")
+				m.addMessage(m.t("tui.command.copy.all"))
 				return nil
 			}
 
@@ -116,37 +116,37 @@ var registry = map[string]CommandDefinition{
 			// "Benchmark" usually means copy the code.
 			// Let's just copy the whole response for now as it's safer.
 			clipboard.WriteAll(m.currentRawResponse)
-			m.addMessage("✅ 已复制回复内容到剪贴板")
+			m.addMessage(m.t("tui.command.copy.clipboard"))
 			return nil
 		},
 	},
 	"/context": {
 		Name:        "/context",
-		Description: "查看上下文统计",
+		Description: tuiLocalizer().T("tui.command.context.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			if m.agent == nil {
 				return nil
 			}
 			usage := m.agent.GetTokenUsage() // This is approx
 			// A real token count needs access to encoding, agent might provide it.
-			m.addMessage(fmt.Sprintf("📊 **上下文统计**\n- 估算 Tokens: %d\n- 消息数: %d", usage, len(m.messages))) // History len is internal agent field
+			m.addMessage(m.t("tui.command.context.summary", usage, len(m.messages)))
 			return nil
 		},
 	},
 	"/status": {
 		Name:        "/status",
-		Description: "查看连接状态",
+		Description: tuiLocalizer().T("tui.command.status.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
-			m.addMessage("📊 **状态**：Ready=" + fmt.Sprint(m.host.IsReady()))
+			m.addMessage(m.t("tui.command.status.summary", m.host.IsReady()))
 			return nil
 		},
 	},
 	"/approvals": {
 		Name:        "/approvals",
-		Description: "切换权限策略 (read-only/prompt/full)",
+		Description: tuiLocalizer().T("tui.command.approvals.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			if len(args) < 1 {
-				m.addMessage(fmt.Sprintf("🛡️ 当前 approvals: **%s**（可选：read-only / prompt / full）", m.approvalMode))
+				m.addMessage(m.t("tui.approvals.current", m.approvalMode))
 				return nil
 			}
 			mode := strings.ToLower(strings.TrimSpace(args[0]))
@@ -158,12 +158,12 @@ var registry = map[string]CommandDefinition{
 			case "full":
 				mode = "full"
 			default:
-				m.addMessage("用法：/approvals read-only|prompt|full")
+				m.addMessage(m.t("tui.command.approvals.usage"))
 				return nil
 			}
 
 			if m.agent == nil {
-				m.addMessage("⚠️ Agent 未初始化（缺少 API Key？）")
+				m.addMessage(m.t("tui.agent.not_initialized"))
 				return nil
 			}
 
@@ -174,12 +174,16 @@ var registry = map[string]CommandDefinition{
 
 			switch mode {
 			case "full":
-				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) bool { return true })
+				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+					return agent.PermissionDecision{Allow: true}
+				})
 			case "read-only":
-				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) bool { return false })
+				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+					return agent.PermissionDecision{Allow: false}
+				})
 			default:
-				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) bool {
-					resChan := make(chan bool)
+				m.agent.SetPermissionFunc(func(req agent.PermissionRequest) agent.PermissionDecision {
+					resChan := make(chan agent.PermissionDecision)
 					m.permReqChan <- PermissionRequest{
 						ToolName: req.ToolName,
 						Args:     req.Args,
@@ -190,7 +194,7 @@ var registry = map[string]CommandDefinition{
 			}
 
 			m.approvalMode = mode
-			m.addMessage(fmt.Sprintf("✅ approvals 已切换为 **%s**", mode))
+			m.addMessage(m.t("tui.command.approvals.updated", mode))
 
 			// 不持久化以免复杂化，仅运行时生效
 			return waitForPermission(m.permReqChan)
@@ -198,27 +202,27 @@ var registry = map[string]CommandDefinition{
 	},
 	"/save": {
 		Name:        "/save",
-		Description: "保存会话到磁盘",
+		Description: tuiLocalizer().T("tui.command.save.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			if m.rec == nil || m.agent == nil {
-				m.addMessage("⚠️ Recorder or Agent not initialized")
+				m.addMessage(m.t("tui.command.save.not_initialized"))
 				return nil
 			}
 			err := m.rec.SaveMessages(m.agent.SnapshotMessages())
 			if err != nil {
-				m.addMessage(fmt.Sprintf("❌ 保存失败：%v", err))
+				m.addMessage(m.t("tui.command.save.failed", err))
 			} else {
-				m.addMessage(fmt.Sprintf("✅ 会话已保存 (ID: %s)", m.rec.Meta.ID))
+				m.addMessage(m.t("tui.command.save.success", m.rec.Meta.ID))
 			}
 			return nil
 		},
 	},
 	"/load": {
 		Name:        "/load",
-		Description: "加载会话 (需提供 ID)",
+		Description: tuiLocalizer().T("tui.command.load.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			if len(args) < 1 {
-				m.addMessage("用法：/load <session_id> (警告：将覆盖当前上下文)")
+				m.addMessage(m.t("tui.command.load.usage"))
 				return nil
 			}
 			// Deduce DataDir from current rec or ask user?
@@ -228,19 +232,19 @@ var registry = map[string]CommandDefinition{
 				dataDir = filepath.Dir(m.rec.Dir)
 			} else {
 				// Fallback or error
-				m.addMessage("⚠️ 无法确定 DataDir (当前未关联 Session)")
+				m.addMessage(m.t("tui.command.load.no_datadir"))
 				return nil
 			}
 
 			id := args[0]
 			rec, err := session.Load(dataDir, id)
 			if err != nil {
-				m.addMessage(fmt.Sprintf("❌ 加载失败：%v", err))
+				m.addMessage(m.t("tui.command.load.failed", err))
 				return nil
 			}
 			msgs, err := rec.LoadMessages()
 			if err != nil {
-				m.addMessage(fmt.Sprintf("❌ 读取消息失败：%v", err))
+				m.addMessage(m.t("tui.command.load.messages_failed", err))
 				return nil
 			}
 
@@ -249,14 +253,9 @@ var registry = map[string]CommandDefinition{
 				m.messages = []string{} // Clear UI
 				// Re-populate UI from loaded messages
 				for _, msg := range msgs {
-					// ... simple rendering ...
-					prefix := "🤖 "
-					if msg.Role == "user" {
-						prefix = "👤 "
-					}
-					m.addMessage(prefix + msg.Content)
+					m.addMessage(m.rolePrefix(msg.Role) + msg.Content)
 				}
-				m.addMessage(fmt.Sprintf("✅ 已加载会话 %s (%d msgs)", id, len(msgs)))
+				m.addMessage(m.t("tui.command.load.success", id, len(msgs)))
 			}
 			return nil
 		},
@@ -275,10 +274,10 @@ func GetCommands() []string {
 func init() {
 	registry["/help"] = CommandDefinition{
 		Name:        "/help",
-		Description: "显示帮助信息",
+		Description: tuiLocalizer().T("tui.command.help.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
 			var sb strings.Builder
-			sb.WriteString("**可用命令**：\n\n")
+			sb.WriteString(m.t("tui.command.help.title"))
 
 			// Static ordered list
 			ordered := []string{"/help", "/mode", "/add", "/copy", "/save", "/load", "/context", "/status", "/approvals", "/clear", "/quit", "/exit"}

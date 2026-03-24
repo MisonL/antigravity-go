@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mison/antigravity-go/internal/config"
 	"github.com/mison/antigravity-go/internal/session"
 )
 
@@ -68,5 +69,35 @@ func TestHandleTasksReturnsSummary(t *testing.T) {
 	}
 	if payload.RecentFailure == nil || payload.RecentFailure.ID != failedID {
 		t.Fatalf("unexpected recent failure: %+v", payload.RecentFailure)
+	}
+}
+
+func TestTaskStoreRootFallsBackToConfigDataDir(t *testing.T) {
+	tempDir := t.TempDir()
+	srv := &Server{
+		cfg: config.Config{
+			DataDir: tempDir,
+		},
+	}
+
+	if got, want := srv.taskStoreRoot(), filepath.Join(tempDir, "tasks"); got != want {
+		t.Fatalf("unexpected task store root: got %q want %q", got, want)
+	}
+}
+
+func TestSummarizeTasksHandlesEmptyList(t *testing.T) {
+	payload := summarizeTasks(nil)
+
+	if payload.Total != 0 {
+		t.Fatalf("unexpected total: %d", payload.Total)
+	}
+	if payload.SuccessRate != 0 {
+		t.Fatalf("unexpected success rate: %v", payload.SuccessRate)
+	}
+	if payload.CurrentTask != nil {
+		t.Fatalf("expected nil current task, got %+v", payload.CurrentTask)
+	}
+	if payload.RecentFailure != nil {
+		t.Fatalf("expected nil recent failure, got %+v", payload.RecentFailure)
 	}
 }
