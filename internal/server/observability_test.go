@@ -40,7 +40,7 @@ func TestSummarizePlaneCollectionHandlesNestedPayloads(t *testing.T) {
 	}
 }
 
-func TestHandleVisualSelfTestSampleIncludesTokenizedURL(t *testing.T) {
+func TestHandleVisualSelfTestSampleReturnsDashboardURLWithoutToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "https://dashboard.local/api/visual-self-test/sample?token=abc123", nil)
 	req.Host = "dashboard.local"
 	resp := httptest.NewRecorder()
@@ -57,7 +57,7 @@ func TestHandleVisualSelfTestSampleIncludesTokenizedURL(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if payload["url"] != "https://dashboard.local/?token=abc123" {
+	if payload["url"] != "https://dashboard.local/" {
 		t.Fatalf("unexpected url: %#v", payload["url"])
 	}
 

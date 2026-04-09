@@ -37,3 +37,31 @@ func TestSanitizePath(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizePathRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+
+	outsideFile := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+
+	fileLink := filepath.Join(root, "secret-link.txt")
+	if err := os.Symlink(outsideFile, fileLink); err != nil {
+		t.Fatalf("create file symlink: %v", err)
+	}
+
+	if _, err := SanitizePath(root, "secret-link.txt"); err == nil {
+		t.Fatal("expected symlinked file escape to be rejected")
+	}
+
+	dirLink := filepath.Join(root, "escape-dir")
+	if err := os.Symlink(outside, dirLink); err != nil {
+		t.Fatalf("create dir symlink: %v", err)
+	}
+
+	if _, err := SanitizePath(root, filepath.Join("escape-dir", "nested.txt")); err == nil {
+		t.Fatal("expected symlinked directory escape to be rejected")
+	}
+}

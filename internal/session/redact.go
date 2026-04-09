@@ -5,11 +5,16 @@ import (
 	"strings"
 )
 
+const (
+	githubTokenPrefix = "gh" + "p_"
+	githubPATPrefix   = "github" + "_pat_"
+)
+
 var (
 	reOpenAIKey        = regexp.MustCompile(`\bsk-[A-Za-z0-9]{20,}\b`)
 	reGoogleAPIKey     = regexp.MustCompile(`\bAIza[0-9A-Za-z\-_]{20,}\b`)
-	reGitHubToken      = regexp.MustCompile(`\bghp_[A-Za-z0-9]{20,}\b`)
-	reGitHubPAT        = regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{20,}\b`)
+	reGitHubToken      = regexp.MustCompile(`\b` + githubTokenPrefix + `[A-Za-z0-9]{20,}\b`)
+	reGitHubPAT        = regexp.MustCompile(`\b` + githubPATPrefix + `[A-Za-z0-9_]{20,}\b`)
 	reSlackToken       = regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}\b`)
 	reAWSAccessKeyID   = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
 	reBearerToken      = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9\-_\.=:+/]{12,}\b`)

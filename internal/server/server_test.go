@@ -147,10 +147,10 @@ func TestHandleSessionResumeReturnsWebsocketAndHistory(t *testing.T) {
 	if payload["workspace_root"] != "/tmp/resume-workspace" {
 		t.Fatalf("unexpected workspace_root: %#v", payload["workspace_root"])
 	}
-	if payload["redirect_url"] != "http://example.com/?resume_trajectory=traj-42&token=test-token" {
+	if payload["redirect_url"] != "http://example.com/?resume_trajectory=traj-42" {
 		t.Fatalf("unexpected redirect_url: %#v", payload["redirect_url"])
 	}
-	if payload["websocket_url"] != "ws://example.com/ws?resume_trajectory=traj-42&token=test-token" {
+	if payload["websocket_url"] != "ws://example.com/ws?resume_trajectory=traj-42" {
 		t.Fatalf("unexpected websocket_url: %#v", payload["websocket_url"])
 	}
 	messages, ok := payload["messages"].([]any)
@@ -171,5 +171,56 @@ func TestHandleSessionResumeRejectsInvalidTrajectory(t *testing.T) {
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("unexpected status: %d", resp.Code)
+	}
+}
+
+func TestAuthMiddlewareBootstrapsCookieAndRedirectsAwayFromTokenURL(t *testing.T) {
+	srv := &Server{authToken: "test-token"}
+	handler := srv.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/?token=test-token&resume_trajectory=traj-42", nil)
+	resp := httptest.NewRecorder()
+
+	handler.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusSeeOther {
+		t.Fatalf("unexpected status: %d", resp.Code)
+	}
+	if location := resp.Header().Get("Location"); location != "/?resume_trajectory=traj-42" {
+		t.Fatalf("unexpected redirect location: %q", location)
+	}
+
+	cookies := resp.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one bootstrap cookie, got %d", len(cookies))
+	}
+	if cookies[0].Name != "ago_token" || cookies[0].Value != "test-token" {
+		t.Fatalf("unexpected cookie: %#v", cookies[0])
+	}
+	if !cookies[0].HttpOnly {
+		t.Fatal("expected bootstrap cookie to be HttpOnly")
+	}
+}
+
+func TestAuthMiddlewareMarksCookieSecureBehindHTTPSProxy(t *testing.T) {
+	srv := &Server{authToken: "test-token"}
+	handler := srv.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/?token=test-token", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp := httptest.NewRecorder()
+
+	handler.ServeHTTP(resp, req)
+
+	cookies := resp.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one bootstrap cookie, got %d", len(cookies))
+	}
+	if !cookies[0].Secure {
+		t.Fatal("expected bootstrap cookie to be Secure behind HTTPS proxy")
 	}
 }

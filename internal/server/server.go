@@ -247,48 +247,97 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// 1. Check for cookie
+		source := ""
+		normalizedToken := ""
 		cookie, _ := r.Cookie("ago_token")
-		token := ""
-		if cookie != nil {
-			token = cookie.Value
+		candidates := []struct {
+			source string
+			value  string
+		}{
+			{source: "cookie", value: cookieValue(cookie)},
+			{source: "header", value: r.Header.Get("Authorization")},
+			{source: "query", value: r.URL.Query().Get("token")},
 		}
 
-		// 2. Check for Authorization header
-		if token == "" {
-			token = r.Header.Get("Authorization")
+		for _, candidate := range candidates {
+			token, ok := s.normalizeAuthToken(candidate.value)
+			if !ok {
+				continue
+			}
+			source = candidate.source
+			normalizedToken = token
+			break
 		}
 
-		// 3. Check for query param (and set cookie if valid)
-		if token == "" {
-			token = r.URL.Query().Get("token")
-		}
-
-		// Simple prefix check
-		expected := "Bearer " + s.authToken
-		isValid := s.authToken == "" || token == expected || token == s.authToken
-
-		if !isValid {
+		if s.hasAuthToken() && normalizedToken == "" {
 			// Special case for static assets: allow if already authorized via cookie in previous requests
 			// but we already checked the cookie above.
 			http.Error(w, "Unauthorized (Invalid Token)", http.StatusUnauthorized)
 			return
 		}
 
-		// If we have a valid token (not from header), set/refresh cookie
-		if s.authToken != "" && token != "" && token != expected {
+		// Refresh the browser cookie from a valid header/query bootstrap token.
+		if s.hasAuthToken() && normalizedToken != "" && source != "cookie" {
 			http.SetCookie(w, &http.Cookie{
 				Name:     "ago_token",
-				Value:    token,
+				Value:    normalizedToken,
 				Path:     "/",
-				HttpOnly: false, // Allow JS to see it if needed, but primarily for browser requests
+				HttpOnly: true,
+				Secure:   s.externalScheme(r) == "https",
 				SameSite: http.SameSiteLaxMode,
 				MaxAge:   86400, // 24 hours
 			})
 		}
 
+		if source == "query" && shouldRedirectAfterTokenBootstrap(r) {
+			http.Redirect(w, r, stripTokenQuery(r.URL), http.StatusSeeOther)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	})
+}
+
+func cookieValue(cookie *http.Cookie) string {
+	if cookie == nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func (s *Server) normalizeAuthToken(raw string) (string, bool) {
+	token := strings.TrimSpace(raw)
+	if !s.hasAuthToken() {
+		return "", true
+	}
+	switch token {
+	case s.authToken, "Bearer " + s.authToken:
+		return s.authToken, true
+	default:
+		return "", false
+	}
+}
+
+func shouldRedirectAfterTokenBootstrap(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	return !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/ws")
+}
+
+func stripTokenQuery(u *url.URL) string {
+	if u == nil {
+		return "/"
+	}
+	sanitized := *u
+	values := sanitized.Query()
+	values.Del("token")
+	sanitized.RawQuery = values.Encode()
+	result := sanitized.RequestURI()
+	if result == "" {
+		return "/"
+	}
+	return result
 }
 
 // Handlers
@@ -506,9 +555,6 @@ func (s *Server) trajectoryGetter() session.TrajectoryGetter {
 func (s *Server) buildResumeRedirectURL(r *http.Request, trajectoryID string) string {
 	values := url.Values{}
 	values.Set("resume_trajectory", trajectoryID)
-	if s.hasAuthToken() {
-		values.Set("token", s.authToken)
-	}
 	return (&url.URL{
 		Scheme:   s.externalScheme(r),
 		Host:     r.Host,
@@ -520,9 +566,6 @@ func (s *Server) buildResumeRedirectURL(r *http.Request, trajectoryID string) st
 func (s *Server) buildResumeWebSocketURL(r *http.Request, trajectoryID string) string {
 	values := url.Values{}
 	values.Set("resume_trajectory", trajectoryID)
-	if s.hasAuthToken() {
-		values.Set("token", s.authToken)
-	}
 
 	scheme := "ws"
 	if s.externalScheme(r) == "https" {
@@ -538,7 +581,13 @@ func (s *Server) buildResumeWebSocketURL(r *http.Request, trajectoryID string) s
 
 func (s *Server) externalScheme(r *http.Request) string {
 	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
-		return forwarded
+		if comma := strings.Index(forwarded, ","); comma >= 0 {
+			forwarded = forwarded[:comma]
+		}
+		forwarded = strings.ToLower(strings.TrimSpace(forwarded))
+		if forwarded != "" {
+			return forwarded
+		}
 	}
 	if r.TLS != nil {
 		return "https"
@@ -614,7 +663,7 @@ func (s *Server) handleFSTree(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	absRoot, err := pathutil.SanitizePath(".", rootPath)
+	absRoot, err := pathutil.SanitizePath(s.workspaceRoot, rootPath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
@@ -694,7 +743,7 @@ func (s *Server) handleFSContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		safePath, err := pathutil.SanitizePath(".", filePath)
+		safePath, err := pathutil.SanitizePath(s.workspaceRoot, filePath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
@@ -726,7 +775,7 @@ func (s *Server) handleFSContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		safePath, err := pathutil.SanitizePath(".", req.Path)
+		safePath, err := pathutil.SanitizePath(s.workspaceRoot, req.Path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
@@ -773,7 +822,7 @@ func (s *Server) handleLSPHover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	absFile, err := pathutil.SanitizePath(".", req.File)
+	absFile, err := pathutil.SanitizePath(s.workspaceRoot, req.File)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
@@ -799,7 +848,7 @@ func (s *Server) handleLSPSymbols(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	absFile, err := pathutil.SanitizePath(".", req.File)
+	absFile, err := pathutil.SanitizePath(s.workspaceRoot, req.File)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return

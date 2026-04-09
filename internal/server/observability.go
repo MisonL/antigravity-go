@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -155,18 +154,5 @@ func buildDashboardURL(r *http.Request) string {
 		scheme = "https"
 	}
 
-	base := fmt.Sprintf("%s://%s/", scheme, r.Host)
-	token, ok := requireDashboardToken(r)
-	if !ok {
-		return base
-	}
-
-	values := url.Values{}
-	values.Set("token", token)
-	return base + "?" + values.Encode()
-}
-
-func requireDashboardToken(r *http.Request) (string, bool) {
-	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	return token, token != ""
+	return fmt.Sprintf("%s://%s/", scheme, r.Host)
 }
