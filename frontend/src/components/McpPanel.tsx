@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AsyncContent, StateMessage } from './AsyncState';
 import { SkeletonCardList, SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
-import { buildTokenQuery } from '../domains/types';
 
 interface McpToolInfo {
   name: string;
@@ -40,7 +39,6 @@ interface McpResponse {
 
 interface McpPanelProps {
   onClose: () => void;
-  token: string;
 }
 
 function parseEnvText(raw: string): Record<string, string> {
@@ -72,7 +70,7 @@ function formatEnvText(env?: Record<string, string>): string {
     .join('\n');
 }
 
-export function McpPanel({ onClose, token }: McpPanelProps) {
+export function McpPanel({ onClose }: McpPanelProps) {
   const { t } = useAppDomain();
   const [servers, setServers] = useState<McpServerInfo[]>([]);
   const [capabilities, setCapabilities] = useState<McpCapabilities>({});
@@ -85,14 +83,12 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
   const [formArgs, setFormArgs] = useState('');
   const [formEnv, setFormEnv] = useState('');
 
-  const suffix = useMemo(() => buildTokenQuery(token), [token]);
-
   const fetchServers = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
-      const resp = await fetch(`/api/mcp${suffix}`);
+      const resp = await fetch('/api/mcp');
       if (!resp.ok) {
         throw new Error(`MCP request failed: ${resp.status}`);
       }
@@ -106,7 +102,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [suffix, t]);
+  }, [t]);
 
   useEffect(() => {
     void fetchServers();
@@ -118,7 +114,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
     setError('');
 
     try {
-      const resp = await fetch(`/api/mcp${suffix}`, {
+      const resp = await fetch('/api/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -149,7 +145,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
     setError('');
 
     try {
-      const resp = await fetch(`/api/mcp${suffix}`, {
+      const resp = await fetch('/api/mcp', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -170,7 +166,7 @@ export function McpPanel({ onClose, token }: McpPanelProps) {
     setError('');
 
     try {
-      const resp = await fetch(`/api/mcp${suffix}`, {
+      const resp = await fetch('/api/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'restart', name }),

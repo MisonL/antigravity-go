@@ -3,8 +3,7 @@ import Editor, { loader } from '@monaco-editor/react';
 import { SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
 
-// Configure loader to use CDN or local
-loader.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+loader.config({ paths: { vs: '/monaco/vs' } });
 
 interface CodeViewerProps {
   currentFile: string | null;
@@ -14,9 +13,6 @@ interface CodeViewerProps {
 
 export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeAction, lastModified }) => {
   const { showNotification, t } = useAppDomain();
-  const token = (typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('token')?.trim() || ''
-    : '');
 
   const [code, setCode] = useState<string>(t('codeviewer.placeholder.none'));
   const [language, setLanguage] = useState('go');
@@ -86,7 +82,6 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
       try {
         const res = await fetch(`/api/fs/content?path=${encodeURIComponent(requestedFile)}`, {
           signal: controller.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         if (!res.ok) throw new Error(`Load failed (${res.status})`);
         const data = await res.json();
@@ -127,7 +122,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
 
     fetchContent();
     return () => controller.abort();
-  }, [currentFile, lastModified, t, token]); // Depend on lastModified to re-fetch
+  }, [currentFile, lastModified, t]); // Depend on lastModified to re-fetch
 
   const handleEditorDidMount = (editor: any, monacoInstance: any) => {
     editorRef.current = editor;
@@ -162,7 +157,6 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
                  method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
                 body: JSON.stringify({
                     file,
@@ -192,7 +186,6 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
               },
               body: JSON.stringify({
                   path: currentFile,
@@ -231,7 +224,6 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
     setLoadingContent(true);
     setExternalChange(false);
     fetch(`/api/fs/content?path=${encodeURIComponent(currentFile)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
       .then(async (r) => {
         if (!r.ok) throw new Error(`Load failed (${r.status})`);

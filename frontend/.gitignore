@@ -4,6 +4,7 @@ node_modules
 # output
 out
 dist
+public/monaco/vs
 *.tgz
 
 # code coverage

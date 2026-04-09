@@ -10,7 +10,6 @@ import {
 } from '../components/planeData';
 import { useAppDomain } from './AppDomainContext';
 import {
-  buildTokenQuery,
   getErrorMessage,
   normalizeChatHistory,
   type ObservabilityEvent,
@@ -73,7 +72,6 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     showNotification,
     t,
     setObservabilityBridge,
-    token,
   } = useAppDomain();
 
   const [showTrajectoryModal, setShowTrajectoryModal] = useState(false);
@@ -124,7 +122,6 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     run: loadVisualSelfTestSample,
   } = useAsyncResource<VisualSelfTestSample | null>({ initialValue: null });
 
-  const suffix = useMemo(() => buildTokenQuery(token), [token]);
   const trajectorySteps = useMemo(
     () => normalizeTrajectorySteps(selectedTrajectoryDetail),
     [selectedTrajectoryDetail],
@@ -132,7 +129,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
 
   const fetchObservabilitySummary = useCallback(async () => {
     await loadObservabilitySummary(async () => {
-      const resp = await fetch(`/api/observability/summary${suffix}`);
+      const resp = await fetch('/api/observability/summary');
       if (!resp.ok) {
         throw new Error(t('observability.error.summary_request', resp.status));
       }
@@ -140,11 +137,11 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }, {
       onError: (error) => getErrorMessage(error, t('observability.error.summary_load')),
     });
-  }, [loadObservabilitySummary, suffix, t]);
+  }, [loadObservabilitySummary, t]);
 
   const fetchTaskSummary = useCallback(async () => {
     await loadTaskSummary(async () => {
-      const resp = await fetch(`/api/tasks${suffix}`);
+      const resp = await fetch('/api/tasks');
       if (!resp.ok) {
         throw new Error(t('observability.error.tasks_request', resp.status));
       }
@@ -152,7 +149,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }, {
       onError: (error) => getErrorMessage(error, t('observability.error.tasks_load')),
     });
-  }, [loadTaskSummary, suffix, t]);
+  }, [loadTaskSummary, t]);
 
   const fetchTrajectoryDetail = useCallback(async (id: string, force = false) => {
     if (!id) {
@@ -164,7 +161,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
 
     setSelectedTrajectoryId(id);
     await loadTrajectoryDetail(async () => {
-      const resp = await fetch(`/api/trajectories/${encodeURIComponent(id)}${suffix}`);
+      const resp = await fetch(`/api/trajectories/${encodeURIComponent(id)}`);
       if (!resp.ok) {
         throw new Error(t('observability.error.trajectory_detail_request', resp.status));
       }
@@ -183,7 +180,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
         setRollbackSuccess('');
       },
     });
-  }, [loadTrajectoryDetail, selectedTrajectoryDetail, selectedTrajectoryId, setSelectedTrajectoryDetail, suffix, t]);
+  }, [loadTrajectoryDetail, selectedTrajectoryDetail, selectedTrajectoryId, setSelectedTrajectoryDetail, t]);
 
   const fetchTrajectories = useCallback(async (force = false) => {
     if (!force && trajectories.length > 0) {
@@ -191,7 +188,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }
 
     const normalized = await loadTrajectories(async () => {
-      const resp = await fetch(`/api/trajectories${suffix}`);
+      const resp = await fetch('/api/trajectories');
       if (!resp.ok) {
         throw new Error(t('observability.error.trajectory_list_request', resp.status));
       }
@@ -221,7 +218,6 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     loadTrajectories,
     selectedTrajectoryId,
     setSelectedTrajectoryDetail,
-    suffix,
     t,
     trajectories.length,
   ]);
@@ -232,7 +228,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }
 
     const nextMemories = await loadMemories(async () => {
-      const resp = await fetch(`/api/memories${suffix}`);
+      const resp = await fetch('/api/memories');
       if (!resp.ok) {
         throw new Error(t('observability.error.memory_list_request', resp.status));
       }
@@ -244,7 +240,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
       return;
     }
     await fetchObservabilitySummary();
-  }, [fetchObservabilitySummary, loadMemories, memories.length, suffix, t]);
+  }, [fetchObservabilitySummary, loadMemories, memories.length, t]);
 
   const rollbackToStep = useCallback(async (stepId: string) => {
     if (!stepId) {
@@ -256,7 +252,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     setRollbackSuccess('');
 
     try {
-      const resp = await fetch(`/api/rollback${suffix}`, {
+      const resp = await fetch('/api/rollback', {
         body: JSON.stringify({ step_id: stepId }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
@@ -275,7 +271,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     } finally {
       setRollbackStepId('');
     }
-  }, [fetchTrajectories, showNotification, suffix, t]);
+  }, [fetchTrajectories, showNotification, t]);
 
   const resumeTrajectorySession = useCallback(async (
     trajectoryId: string,
@@ -293,7 +289,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }
 
     try {
-      const resp = await fetch(`/api/sessions/resume${suffix}`, {
+      const resp = await fetch('/api/sessions/resume', {
         body: JSON.stringify({ trajectory_id: trajectoryId }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
@@ -315,9 +311,6 @@ export function useObservabilityDomain(): ObservabilityDomainState {
           ? data.redirect_url
           : (() => {
               const params = new URLSearchParams();
-              if (token) {
-                params.set('token', token);
-              }
               params.set('resume_trajectory', trajectoryId);
               return `/?${params.toString()}`;
             })();
@@ -336,7 +329,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     } finally {
       setResumeLoadingId('');
     }
-  }, [chatBridge, showNotification, suffix, t, token]);
+  }, [chatBridge, showNotification, t]);
 
   const fetchVisualSelfTestSample = useCallback(async (force = false) => {
     if (!force && visualSelfTestSample) {
@@ -344,7 +337,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }
 
     await loadVisualSelfTestSample(async () => {
-      const resp = await fetch(`/api/visual-self-test/sample${suffix}`);
+      const resp = await fetch('/api/visual-self-test/sample');
       if (!resp.ok) {
         throw new Error(t('observability.error.visual_request', resp.status));
       }
@@ -352,7 +345,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }, {
       onError: (error) => getErrorMessage(error, t('observability.error.visual_load')),
     });
-  }, [loadVisualSelfTestSample, suffix, t, visualSelfTestSample]);
+  }, [loadVisualSelfTestSample, t, visualSelfTestSample]);
 
   const handleOpenTrajectoryModal = useCallback(async () => {
     setShowTrajectoryModal(true);

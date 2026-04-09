@@ -23,9 +23,6 @@ function enforceSquareTerminal(host: HTMLDivElement) {
 
 export const TerminalPanel: React.FC<TerminalPanelProps> = memo(function TerminalPanel({ className }) {
   const { t } = useAppDomain();
-  const token = (typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('token')?.trim() || ''
-    : '');
 
   const termRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -44,9 +41,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = memo(function Termina
 
     const mountTerminal = async () => {
       try {
-        const statusResp = await fetch('/api/status', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
+        const statusResp = await fetch('/api/status');
         if (!statusResp.ok) {
           throw new Error(`status ${statusResp.status}`);
         }
@@ -105,7 +100,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = memo(function Termina
       }
 
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsURL = `${proto}://${window.location.host}/ws/term${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      const wsURL = `${proto}://${window.location.host}/ws/term`;
       ws = new WebSocket(wsURL);
       wsRef.current = ws;
 
@@ -172,7 +167,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = memo(function Termina
       ws?.close();
       term?.dispose();
     };
-  }, [t, token]);
+  }, [t]);
 
   return (
     <div

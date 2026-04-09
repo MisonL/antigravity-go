@@ -1,19 +1,55 @@
-import { useEffect, useState } from 'react';
-import { ApprovalModal } from './components/ApprovalModal';
-import { CodeViewer } from './components/CodeViewer';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { FileTree } from './components/FileTree';
-import { McpPanel } from './components/McpPanel';
-import { MemoryModal } from './components/MemoryModal';
-import { TerminalPanel } from './components/TerminalPanel';
 import { ToastCenter } from './components/ToastCenter';
-import { TrajectoryModal } from './components/TrajectoryModal';
-import { VisualSelfTestModal } from './components/VisualSelfTestModal';
 import { AppDomainProvider, useAppDomain } from './domains/AppDomainContext';
 import { ChatWorkspace, useChatDomain } from './domains/ChatDomain';
 import { useObservabilityDomain } from './domains/ObservabilityDomain';
-import { SettingsModal, useSettingsDomain } from './domains/SettingsDomain';
 import './index.css';
+
+const LazyApprovalModal = lazy(async () => {
+  const module = await import('./components/ApprovalModal');
+  return { default: module.ApprovalModal };
+});
+
+const LazyCodeViewer = lazy(async () => {
+  const module = await import('./components/CodeViewer');
+  return { default: module.CodeViewer };
+});
+
+const LazyFileTree = lazy(async () => {
+  const module = await import('./components/FileTree');
+  return { default: module.FileTree };
+});
+
+const LazyTerminalPanel = lazy(async () => {
+  const module = await import('./components/TerminalPanel');
+  return { default: module.TerminalPanel };
+});
+
+const LazyTrajectoryModal = lazy(async () => {
+  const module = await import('./components/TrajectoryModal');
+  return { default: module.TrajectoryModal };
+});
+
+const LazyMemoryModal = lazy(async () => {
+  const module = await import('./components/MemoryModal');
+  return { default: module.MemoryModal };
+});
+
+const LazyMcpPanel = lazy(async () => {
+  const module = await import('./components/McpPanel');
+  return { default: module.McpPanel };
+});
+
+const LazyVisualSelfTestModal = lazy(async () => {
+  const module = await import('./components/VisualSelfTestModal');
+  return { default: module.VisualSelfTestModal };
+});
+
+const LazySettingsModal = lazy(async () => {
+  const module = await import('./components/SettingsModal');
+  return { default: module.SettingsModal };
+});
 
 function truncatePath(path: string | null) {
   if (!path) {
@@ -25,13 +61,21 @@ function truncatePath(path: string | null) {
   return `...${path.slice(-53)}`;
 }
 
+function PanelLoadingShell({ message }: { message: string }) {
+  return (
+    <div className="loading-shell">
+      <div className="data-state">{message}</div>
+    </div>
+  );
+}
+
 function LayoutShell() {
   const app = useAppDomain();
   const chat = useChatDomain();
   const observability = useObservabilityDomain();
-  const settings = useSettingsDomain();
   const { t } = app;
   const [showDataPlane, setShowDataPlane] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const currentFileLabel = truncatePath(app.currentFile);
   const dataPlaneAnchored = Boolean(app.currentFile?.trim());
   const statusLabel = chat.status && chat.connected ? t('app.status.online') : t('app.status.reconnecting');
@@ -110,7 +154,7 @@ function LayoutShell() {
           </button>
           <button className="badge badge-btn" onClick={() => observability.setShowMcpPanel(true)} type="button">MCP</button>
           <button className="badge badge-btn" data-testid="open-visual-self-test" onClick={() => void observability.handleOpenVisualSelfTestModal()} type="button">{t('app.action.visual_self_test')}</button>
-          <button className="badge badge-btn" onClick={() => settings.setShowSettings(true)} type="button">{t('app.action.settings')}</button>
+          <button className="badge badge-btn" onClick={() => setShowSettings(true)} type="button">{t('app.action.settings')}</button>
         </div>
       </header>
 
@@ -181,16 +225,28 @@ function LayoutShell() {
 
           <div className="data-plane-drawer__body">
             <aside className="data-plane-drawer__explorer glass-panel">
-              <FileTree onSelectFile={app.setCurrentFile} />
+              {showDataPlane ? (
+                <Suspense fallback={<PanelLoadingShell message={t('filetree.workspace_loading')} />}>
+                  <LazyFileTree onSelectFile={app.setCurrentFile} />
+                </Suspense>
+              ) : (
+                <PanelLoadingShell message={t('filetree.workspace_loading')} />
+              )}
             </aside>
 
             <section className="data-plane-drawer__workspace">
               <div className="data-plane-drawer__editor glass-panel">
-                <CodeViewer
-                  currentFile={app.currentFile}
-                  lastModified={app.fileRefreshTrigger}
-                  onCodeAction={chat.handleCodeAction}
-                />
+                {showDataPlane && app.currentFile ? (
+                  <Suspense fallback={<PanelLoadingShell message={t('codeviewer.placeholder.loading')} />}>
+                    <LazyCodeViewer
+                      currentFile={app.currentFile}
+                      lastModified={app.fileRefreshTrigger}
+                      onCodeAction={chat.handleCodeAction}
+                    />
+                  </Suspense>
+                ) : (
+                  <PanelLoadingShell message={t('app.data_plane.empty')} />
+                )}
               </div>
 
               {app.showTerminal && (
@@ -199,7 +255,9 @@ function LayoutShell() {
                     <span>{t('app.panel.terminal')}</span>
                     <button onClick={() => app.setShowTerminal(false)} type="button">{t('app.action.close')}</button>
                   </div>
-                  <TerminalPanel />
+                  <Suspense fallback={<PanelLoadingShell message={t('terminal.unavailable')} />}>
+                    <LazyTerminalPanel />
+                  </Suspense>
                 </div>
               )}
             </section>
@@ -207,57 +265,73 @@ function LayoutShell() {
         </aside>
       </div>
 
-      {chat.approvalReq && <ApprovalModal onDecision={chat.handleApprovalDecision} request={chat.approvalReq} />}
+      {chat.approvalReq && (
+        <Suspense fallback={null}>
+          <LazyApprovalModal onDecision={chat.handleApprovalDecision} request={chat.approvalReq} />
+        </Suspense>
+      )}
 
-      <SettingsModal settings={settings} />
+      {showSettings && (
+        <Suspense fallback={null}>
+          <LazySettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
+        </Suspense>
+      )}
 
       {observability.showTrajectoryModal && (
-        <TrajectoryModal
-          detailError={observability.trajectoryDetailError}
-          detailLoading={observability.trajectoryDetailLoading}
-          isLoading={observability.trajectoriesLoading}
-          items={observability.trajectories}
-          listError={observability.trajectoriesError}
-          onClose={() => observability.setShowTrajectoryModal(false)}
-          onRefresh={() => void observability.fetchTrajectories(true)}
-          onResume={(id) => void observability.resumeTrajectorySession(id)}
-          onRollback={(stepId) => void observability.rollbackToStep(stepId)}
-          onSelect={(id) => void observability.fetchTrajectoryDetail(id, true)}
-          resumeError={observability.resumeError}
-          resumeLoadingId={observability.resumeLoadingId}
-          resumeSuccess={observability.resumeSuccess}
-          rollbackError={observability.rollbackError}
-          rollbackStepId={observability.rollbackStepId}
-          rollbackSuccess={observability.rollbackSuccess}
-          selectedDetail={observability.selectedTrajectoryDetail}
-          selectedId={observability.selectedTrajectoryId}
-          steps={observability.trajectorySteps}
-        />
+        <Suspense fallback={null}>
+          <LazyTrajectoryModal
+            detailError={observability.trajectoryDetailError}
+            detailLoading={observability.trajectoryDetailLoading}
+            isLoading={observability.trajectoriesLoading}
+            items={observability.trajectories}
+            listError={observability.trajectoriesError}
+            onClose={() => observability.setShowTrajectoryModal(false)}
+            onRefresh={() => void observability.fetchTrajectories(true)}
+            onResume={(id) => void observability.resumeTrajectorySession(id)}
+            onRollback={(stepId) => void observability.rollbackToStep(stepId)}
+            onSelect={(id) => void observability.fetchTrajectoryDetail(id, true)}
+            resumeError={observability.resumeError}
+            resumeLoadingId={observability.resumeLoadingId}
+            resumeSuccess={observability.resumeSuccess}
+            rollbackError={observability.rollbackError}
+            rollbackStepId={observability.rollbackStepId}
+            rollbackSuccess={observability.rollbackSuccess}
+            selectedDetail={observability.selectedTrajectoryDetail}
+            selectedId={observability.selectedTrajectoryId}
+            steps={observability.trajectorySteps}
+          />
+        </Suspense>
       )}
 
       {observability.showMemoryModal && (
-        <MemoryModal
-          isLoading={observability.memoriesLoading}
-          items={observability.memories}
-          listError={observability.memoriesError}
-          onClose={() => observability.setShowMemoryModal(false)}
-          onRefresh={() => void observability.fetchMemories(true)}
-        />
+        <Suspense fallback={null}>
+          <LazyMemoryModal
+            isLoading={observability.memoriesLoading}
+            items={observability.memories}
+            listError={observability.memoriesError}
+            onClose={() => observability.setShowMemoryModal(false)}
+            onRefresh={() => void observability.fetchMemories(true)}
+          />
+        </Suspense>
       )}
 
       {observability.showMcpPanel && (
-        <McpPanel onClose={() => observability.setShowMcpPanel(false)} token={app.token} />
+        <Suspense fallback={null}>
+          <LazyMcpPanel onClose={() => observability.setShowMcpPanel(false)} />
+        </Suspense>
       )}
 
       {observability.showVisualSelfTestModal && (
-        <VisualSelfTestModal
-          error={observability.visualSelfTestError}
-          isLoading={observability.visualSelfTestLoading}
-          onClose={() => observability.setShowVisualSelfTestModal(false)}
-          onInsertTask={observability.setVisualSelfTestTask}
-          onRefresh={() => void observability.fetchVisualSelfTestSample(true)}
-          sample={observability.visualSelfTestSample}
-        />
+        <Suspense fallback={null}>
+          <LazyVisualSelfTestModal
+            error={observability.visualSelfTestError}
+            isLoading={observability.visualSelfTestLoading}
+            onClose={() => observability.setShowVisualSelfTestModal(false)}
+            onInsertTask={observability.setVisualSelfTestTask}
+            onRefresh={() => void observability.fetchVisualSelfTestSample(true)}
+            sample={observability.visualSelfTestSample}
+          />
+        </Suspense>
       )}
 
       <ToastCenter />
@@ -267,11 +341,10 @@ function LayoutShell() {
 
 export default function App() {
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const token = searchParams?.get('token')?.trim() || '';
   const initialResumeTrajectoryId = searchParams?.get('resume_trajectory')?.trim() || '';
 
   return (
-    <AppDomainProvider initialResumeTrajectoryId={initialResumeTrajectoryId} token={token}>
+    <AppDomainProvider initialResumeTrajectoryId={initialResumeTrajectoryId}>
       <ErrorBoundary>
         <LayoutShell />
       </ErrorBoundary>

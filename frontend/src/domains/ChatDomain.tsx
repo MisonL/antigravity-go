@@ -106,7 +106,6 @@ export function useChatDomain(): ChatDomainState {
     locale,
     showNotification,
     t,
-    token,
     touchFileRefresh,
   } = useAppDomain();
 
@@ -170,7 +169,7 @@ export function useChatDomain(): ChatDomainState {
   }, [chatMessages, streamingResponse]);
 
   useEffect(() => {
-    const wsURL = buildWebSocketURL(token, resumeTrajectoryId, locale, resumeWebSocketURL);
+    const wsURL = buildWebSocketURL(resumeTrajectoryId, locale, resumeWebSocketURL);
     const ws = new WebSocket(wsURL);
     wsRef.current = ws;
 
@@ -282,7 +281,7 @@ export function useChatDomain(): ChatDomainState {
     return () => {
       ws.close();
     };
-  }, [locale, resumeTrajectoryId, resumeWebSocketURL, t, token, touchFileRefresh]);
+  }, [locale, resumeTrajectoryId, resumeWebSocketURL, t, touchFileRefresh]);
 
   const sendFeedback = useCallback((index: number, type: 'positive' | 'negative') => {
     if (!wsRef.current) {

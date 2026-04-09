@@ -6,9 +6,13 @@ all: build
 # Build everything
 build: frontend backend
 
+frontend/node_modules/.install-stamp: frontend/package.json frontend/bun.lock
+	cd frontend && bun install
+	touch frontend/node_modules/.install-stamp
+
 # Build frontend and copy dist for embedding
-frontend:
-	cd frontend && bun install && bun run build
+frontend: frontend/node_modules/.install-stamp
+	cd frontend && bun run build
 	rm -rf internal/server/dist
 	cp -r frontend/dist internal/server/dist
 
@@ -21,6 +25,7 @@ clean:
 	rm -f ago
 	rm -rf internal/server/dist
 	rm -rf frontend/dist
+	rm -f frontend/node_modules/.install-stamp
 
 # Update core binary from system
 update-core:

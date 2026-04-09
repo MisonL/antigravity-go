@@ -17,7 +17,6 @@ import type {
 
 interface AppDomainProviderProps extends PropsWithChildren {
   initialResumeTrajectoryId: string;
-  token: string;
 }
 
 interface AppDomainContextValue {
@@ -38,7 +37,6 @@ interface AppDomainContextValue {
   setResumeWebSocketURL: (url: string) => void;
   setShowTerminal: (show: boolean) => void;
   showTerminal: boolean;
-  token: string;
   t: TranslateFn;
   touchFileRefresh: () => void;
 }
@@ -55,7 +53,6 @@ const NotificationContext = createContext<NotificationContextValue | null>(null)
 export function AppDomainProvider({
   children,
   initialResumeTrajectoryId,
-  token,
 }: AppDomainProviderProps) {
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -114,7 +111,6 @@ export function AppDomainProvider({
     setShowTerminal,
     showTerminal,
     t,
-    token,
     touchFileRefresh,
   }), [
     chatBridge,
@@ -130,7 +126,6 @@ export function AppDomainProvider({
     showTerminal,
     t,
     touchFileRefresh,
-    token,
   ]);
 
   return (

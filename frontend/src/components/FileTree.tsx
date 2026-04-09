@@ -114,9 +114,6 @@ const TreeNode = memo(function TreeNode({
 
 export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
   const { t } = useAppDomain();
-  const token = (typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('token')?.trim() || ''
-    : '');
 
   const [root, setRoot] = useState<FileNode | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,14 +121,12 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
   const [loadingPaths, setLoadingPaths] = useState<Record<string, boolean>>({});
 
   const apiFetchTree = useCallback(async (path: string) => {
-    const res = await fetch(`/api/fs/tree?path=${encodeURIComponent(path)}&depth=1`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
+    const res = await fetch(`/api/fs/tree?path=${encodeURIComponent(path)}&depth=1`);
     if (!res.ok) {
       throw new Error(await res.text());
     }
     return (await res.json()) as FileNode;
-  }, [token]);
+  }, []);
 
   const setChildrenByPath = useCallback((node: FileNode, targetPath: string, children: FileNode[]): FileNode => {
     if (node.path === targetPath) {

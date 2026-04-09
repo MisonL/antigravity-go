@@ -204,13 +204,13 @@ export function normalizeChatHistory(payload: unknown): ChatMessage[] {
 }
 
 export function buildWebSocketURL(
-  token: string,
   resumeTrajectoryId: string,
   locale: string,
   explicitURL = '',
 ): string {
   if (explicitURL.trim()) {
     const url = new URL(explicitURL, window.location.origin);
+    url.searchParams.delete('token');
     if (locale) {
       url.searchParams.set('locale', locale);
     }
@@ -219,9 +219,6 @@ export function buildWebSocketURL(
 
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const params = new URLSearchParams();
-  if (token) {
-    params.set('token', token);
-  }
   if (resumeTrajectoryId) {
     params.set('resume_trajectory', resumeTrajectoryId);
   }
@@ -230,10 +227,6 @@ export function buildWebSocketURL(
   }
   const suffix = params.toString();
   return `${proto}://${window.location.host}/ws${suffix ? `?${suffix}` : ''}`;
-}
-
-export function buildTokenQuery(token: string): string {
-  return token ? `?token=${encodeURIComponent(token)}` : '';
 }
 
 export function formatCodeActionPrompt(
