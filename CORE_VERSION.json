@@ -1,9 +1,9 @@
 {
   "core": {
-    "version": "1.20.6",
+    "version": "1.22.2",
     "binary": "./antigravity_core",
     "arch": "x86_64",
-    "last_updated": "2026-03-23"
+    "last_updated": "2026-04-09"
   },
   "tools": {
     "ripgrep": {
@@ -11,8 +11,8 @@
       "arch": "x86_64"
     },
     "fd": {
-      "version": "Unknown/ArchMismatch",
-      "arch": "arm64"
+      "version": "Unavailable",
+      "arch": "Unavailable"
     }
   },
   "system": {
@@ -21,6 +21,6 @@
   },
   "source_app": {
     "path": "/Applications/Antigravity.app",
-    "version": "1.20.6"
+    "version": "1.22.2"
   }
 }

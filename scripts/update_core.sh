@@ -34,6 +34,43 @@ log_done() { echo -e "${GREEN}[DONE]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+find_first_file() {
+    for candidate in "$@"; do
+        if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+find_first_cmd() {
+    for candidate in "$@"; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            command -v "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+read_tool_version() {
+    local tool_path="$1"
+    if [ -x "$tool_path" ]; then
+        "$tool_path" --version 2>/dev/null | head -n 1 | awk '{print $2}'
+    else
+        echo "Unavailable"
+    fi
+}
+
+get_arch() {
+    if [ -e "$1" ]; then
+        file -b "$1" 2>/dev/null | awk -F' ' '{print $NF}'
+    else
+        echo "Unavailable"
+    fi
+}
+
 # --- Execution ---
 
 log_info "检查系统环境..."
@@ -45,11 +82,12 @@ mkdir -p "$BIN_DIR"
 
 # 1. 自动检测架构与核心二进制
 log_info "正在探索核心引擎 (antigravity_core)..."
-# 优先查找 x64，未来可扩展 arm64
-SOURCE_CORE_X64="$APP_PATH/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_x64"
+SOURCE_CORE=$(find_first_file \
+    "$APP_PATH/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_x64" \
+    "$APP_PATH/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm64" || true)
 
-if [ -f "$SOURCE_CORE_X64" ]; then
-    log_info "发现核心二进制: $SOURCE_CORE_X64"
+if [ -n "$SOURCE_CORE" ]; then
+    log_info "发现核心二进制: $SOURCE_CORE"
     
     # 备份旧版本
     if [ -f "$TARGET_CORE" ]; then
@@ -57,7 +95,7 @@ if [ -f "$SOURCE_CORE_X64" ]; then
         cp "$TARGET_CORE" "${TARGET_CORE}.bak"
     fi
     
-    cp "$SOURCE_CORE_X64" "$TARGET_CORE"
+    cp "$SOURCE_CORE" "$TARGET_CORE"
     chmod +x "$TARGET_CORE"
     
     # Ad-hoc sign to prevent macOS Dyld hang
@@ -83,24 +121,36 @@ else
 fi
 
 # FD
-SOURCE_FD="$APP_PATH/Contents/Resources/app/extensions/antigravity/bin/fd"
-if [ -f "$SOURCE_FD" ]; then
+SOURCE_FD=$(find_first_file \
+    "$APP_PATH/Contents/Resources/app/extensions/antigravity/bin/fd" \
+    "$APP_PATH/Contents/Resources/app/node_modules/.bin/fd" || true)
+
+if [ -n "$SOURCE_FD" ]; then
     cp "$SOURCE_FD" "$BIN_DIR/fd"
     chmod +x "$BIN_DIR/fd"
     log_done "FD 已同步。"
 else
-    log_warn "跳过 FD: 未找到源文件。"
+    SYSTEM_FD=$(find_first_cmd fd fdfind || true)
+    if [ -n "$SYSTEM_FD" ]; then
+        cp "$SYSTEM_FD" "$BIN_DIR/fd"
+        chmod +x "$BIN_DIR/fd"
+        log_done "FD 已从系统命令同步: $SYSTEM_FD"
+    else
+        if [ -e "$BIN_DIR/fd" ]; then
+            rm -f "$BIN_DIR/fd"
+            log_warn "新版 App 未提供 FD，已移除失效的本地副本。"
+        fi
+        log_warn "跳过 FD: 官方包和系统环境都未提供可用版本。"
+    fi
 fi
 
 # 3. 记录版本信息
 VERSION_FILE="./CORE_VERSION.json"
 CORE_VER=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "Unknown")
-RG_VER=$("$BIN_DIR/rg" --version | head -n 1 | awk '{print $2}' 2>/dev/null || echo "Unknown")
-FD_VER=$("$BIN_DIR/fd" --version 2>/dev/null || echo "Unknown/ArchMismatch")
+RG_VER=$(read_tool_version "$BIN_DIR/rg")
+FD_VER=$(read_tool_version "$BIN_DIR/fd")
 UPDATED_DATE=$(date +%Y-%m-%d)
 
-# 架构探测
-get_arch() { file -b "$1" 2>/dev/null | awk -F' ' '{print $NF}' || echo "unknown"; }
 CORE_ARCH=$(get_arch "$TARGET_CORE")
 RG_ARCH=$(get_arch "$BIN_DIR/rg")
 FD_ARCH=$(get_arch "$BIN_DIR/fd")
@@ -140,7 +190,7 @@ EOF
 echo ""
 log_done "✨ 所有内核组件更新成功！"
 echo "------------------------------------------------"
-ls -lh "$TARGET_CORE" "$BIN_DIR/rg" "$BIN_DIR/fd" 2>/dev/null
+ls -lh "$TARGET_CORE" "$BIN_DIR/rg" "$BIN_DIR/fd" 2>/dev/null || true
 echo "------------------------------------------------"
 log_info "版本信息已更新至: $VERSION_FILE"
 log_info "现在您可以继续使用 'make build' 或 'make run' 了。"
