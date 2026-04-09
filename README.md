@@ -1,4 +1,4 @@
-# Antigravity-Go (AGo) (v0.1.0)
+# Antigravity-Go (AGo) (v0.2.0)
 
 ## 1. 项目定位
 Antigravity-Go (AGo) 是一个基于 Go 开发的工业级 Agent 运行环境与工作站。它通过集成感知层能力，实现任务编排、闭环执行与系统自愈，旨在为开发者提供稳定、极简的自动化辅助。

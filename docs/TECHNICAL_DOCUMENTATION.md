@@ -1,4 +1,4 @@
-# Antigravity-Go (AGo) (V0.1.0) - 技术手册
+# Antigravity-Go (AGo) (V0.2.0) - 技术手册
 
 ## 1. 核心架构: 宿主与内核
 

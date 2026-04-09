@@ -1,4 +1,4 @@
-# Antigravity-Go (AGo) (V0.1.0) - 产品设计
+# Antigravity-Go (AGo) (V0.2.0) - 产品设计
 
 ## 1. 产品定义
 

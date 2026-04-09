@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-09
+
+### Added
+- Added repository-level contributor guidance in `AGENTS.md` to align local execution, validation, and review behavior.
+- Added query-token bootstrap hardening tests and secret redaction coverage for session output handling.
+
+### Changed
+- Switched the embedded web console to lazy-load heavy overlays and panels, reducing the primary frontend entry chunk to about 57 kB.
+- Localized Monaco assets into the repository build output instead of relying on external CDN delivery.
+- Updated the core runtime sync flow for Antigravity `1.22.2`, including explicit handling when upstream app bundles no longer ship `fd`.
+
+### Fixed
+- Stripped bootstrap tokens from redirected URLs after cookie establishment and hardened proxy-aware secure cookie handling.
+- Tightened workspace path sanitization to reject symlink escapes outside the configured workspace root.
+- Removed stale, unusable local `fd` artifacts from the update flow and recorded missing-tool state explicitly in `CORE_VERSION.json`.
+
 ## [0.1.0] - 2026-03-24
 
 ### Added
