@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: Go tests
+        run: go test ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: bun run lint
+
+      - name: Frontend build
+        working-directory: frontend
+        run: bun run build
+
+      - name: Backend build
+        run: go build ./...
+
+      - name: Build embedded binary
+        run: make build
+
+      - name: Diff hygiene
+        run: git diff --check
