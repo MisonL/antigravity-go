@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -356,7 +357,9 @@ func runResume(args []string) {
 func runExecutions(args []string) {
 	fs := flag.NewFlagSet("executions", flag.ExitOnError)
 	dataDirF := fs.String("data", "", "Data directory")
+	jsonF := fs.Bool("json", false, "Render summary as JSON")
 	limitF := fs.Int("limit", 10, "Max executions to show")
+	statusF := fs.String("status", "", "Filter by execution status")
 	_ = fs.Parse(args)
 
 	cfg, err := config.Load()
@@ -373,6 +376,17 @@ func runExecutions(args []string) {
 		fmt.Printf("读取执行账本失败: %v\n", err)
 		return
 	}
+	records = filterExecutionRecords(records, *statusF)
+
+	if *jsonF {
+		payload, err := renderExecutionSummaryJSON(records)
+		if err != nil {
+			fmt.Printf("渲染执行账本 JSON 失败: %v\n", err)
+			return
+		}
+		fmt.Print(payload)
+		return
+	}
 
 	fmt.Print(renderExecutionSummary(records, *limitF))
 }
@@ -380,6 +394,7 @@ func runExecutions(args []string) {
 func runExecution(args []string) {
 	fs := flag.NewFlagSet("execution", flag.ExitOnError)
 	dataDirF := fs.String("data", "", "Data directory")
+	jsonF := fs.Bool("json", false, "Render execution detail as JSON")
 	_ = fs.Parse(args)
 
 	if fs.NArg() != 1 {
@@ -417,6 +432,16 @@ func runExecution(args []string) {
 		return
 	}
 
+	if *jsonF {
+		payload, err := renderExecutionDetailJSON(record, steps, timeline)
+		if err != nil {
+			fmt.Printf("渲染执行详情 JSON 失败: %v\n", err)
+			return
+		}
+		fmt.Print(payload)
+		return
+	}
+
 	fmt.Print(renderExecutionDetail(record, steps, timeline))
 }
 
@@ -433,19 +458,16 @@ func renderExecutionSummary(records []session.ExecutionRecord, limit int) string
 		limit = len(records)
 	}
 
-	counts := map[string]int{}
-	for _, record := range records {
-		counts[strings.TrimSpace(record.Status)]++
-	}
+	summary := summarizeExecutionRecords(records)
 
 	var sb strings.Builder
 	sb.WriteString("Execution Ledger\n")
 	sb.WriteString(fmt.Sprintf(
 		"总数: %d  成功: %d  失败: %d  进行中: %d\n\n",
-		len(records),
-		counts[session.ExecutionStatusSuccess],
-		counts[session.ExecutionStatusFailed]+counts[session.ExecutionStatusBlocked]+counts[session.ExecutionStatusRolledBack],
-		counts[session.ExecutionStatusPending]+counts[session.ExecutionStatusRunning]+counts[session.ExecutionStatusAwaitingApproval]+counts[session.ExecutionStatusValidating],
+		summary.Total,
+		summary.Success,
+		summary.Failed,
+		summary.InProgress,
 	))
 
 	for _, record := range records[:limit] {
@@ -463,6 +485,16 @@ func renderExecutionSummary(records []session.ExecutionRecord, limit int) string
 	}
 
 	return sb.String()
+}
+
+func renderExecutionSummaryJSON(records []session.ExecutionRecord) (string, error) {
+	summary := summarizeExecutionRecords(records)
+
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data) + "\n", nil
 }
 
 func renderExecutionDetail(record *session.ExecutionRecord, steps []session.ExecutionStep, timeline []session.ExecutionEvent) string {
@@ -527,6 +559,80 @@ func renderExecutionDetail(record *session.ExecutionRecord, steps []session.Exec
 	}
 
 	return sb.String()
+}
+
+func renderExecutionDetailJSON(record *session.ExecutionRecord, steps []session.ExecutionStep, timeline []session.ExecutionEvent) (string, error) {
+	payload := struct {
+		Execution *session.ExecutionRecord `json:"execution"`
+		Steps     []session.ExecutionStep  `json:"steps"`
+		Timeline  []session.ExecutionEvent `json:"timeline"`
+	}{
+		Execution: record,
+		Steps:     steps,
+		Timeline:  timeline,
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data) + "\n", nil
+}
+
+type executionSummaryPayload struct {
+	GeneratedAt      string                    `json:"generated_at"`
+	Total            int                       `json:"total"`
+	Success          int                       `json:"success"`
+	Failed           int                       `json:"failed"`
+	InProgress       int                       `json:"in_progress"`
+	CurrentExecution *session.ExecutionRecord  `json:"current_execution,omitempty"`
+	RecentFailure    *session.ExecutionRecord  `json:"recent_failure,omitempty"`
+	Executions       []session.ExecutionRecord `json:"executions"`
+}
+
+func summarizeExecutionRecords(records []session.ExecutionRecord) executionSummaryPayload {
+	payload := executionSummaryPayload{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Executions:  records,
+		Total:       len(records),
+	}
+
+	for i := range records {
+		record := records[i]
+		switch strings.TrimSpace(record.Status) {
+		case session.ExecutionStatusSuccess:
+			payload.Success++
+		case session.ExecutionStatusFailed, session.ExecutionStatusBlocked, session.ExecutionStatusRolledBack:
+			payload.Failed++
+			if payload.RecentFailure == nil {
+				copy := record
+				payload.RecentFailure = &copy
+			}
+		case session.ExecutionStatusPending, session.ExecutionStatusRunning, session.ExecutionStatusAwaitingApproval, session.ExecutionStatusValidating:
+			payload.InProgress++
+			if payload.CurrentExecution == nil {
+				copy := record
+				payload.CurrentExecution = &copy
+			}
+		}
+	}
+
+	return payload
+}
+
+func filterExecutionRecords(records []session.ExecutionRecord, status string) []session.ExecutionRecord {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return records
+	}
+
+	filtered := make([]session.ExecutionRecord, 0, len(records))
+	for _, record := range records {
+		if strings.EqualFold(strings.TrimSpace(record.Status), status) {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
 }
 
 func formatExecutionTime(ts time.Time) string {
