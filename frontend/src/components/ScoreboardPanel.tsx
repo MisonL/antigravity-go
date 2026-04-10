@@ -1,23 +1,11 @@
 import { useAppDomain } from '../domains/AppDomainContext';
+import {
+  type ExecutionSummaryItem,
+  type ExecutionSummaryResponse,
+} from '../domains/types';
 
-export interface TaskSummaryItem {
-  id: string;
-  reference: string;
-  status: string;
-  updated_at: string;
-}
-
-export interface TaskSummaryResponse {
-  generated_at: string;
-  total: number;
-  success: number;
-  failed: number;
-  in_progress: number;
-  success_rate: number;
-  current_task?: TaskSummaryItem;
-  recent_failure?: TaskSummaryItem;
-  tasks: TaskSummaryItem[];
-}
+export type TaskSummaryItem = ExecutionSummaryItem;
+export type TaskSummaryResponse = ExecutionSummaryResponse;
 
 interface ScoreboardPanelProps {
   error?: string;
@@ -25,6 +13,7 @@ interface ScoreboardPanelProps {
 }
 
 function taskStatusLabel(status: string): string {
+  const normalized = normalizeTaskStatus(status);
   const labels: Record<string, string> = {
     pending: 'scoreboard.status.pending',
     running: 'scoreboard.status.running',
@@ -32,12 +21,12 @@ function taskStatusLabel(status: string): string {
     success: 'scoreboard.status.success',
     failed: 'scoreboard.status.failed',
   };
-  return labels[status] ?? 'scoreboard.status.unknown';
+  return labels[normalized] ?? 'scoreboard.status.unknown';
 }
 
 export function ScoreboardPanel({ error = '', summary }: ScoreboardPanelProps) {
   const { t } = useAppDomain();
-  const currentTask = summary?.current_task;
+  const currentTask = summary?.current_execution ?? summary?.current_task;
   const recentFailure = summary?.recent_failure;
   const successRate = summary ? `${summary.success_rate.toFixed(0)}%` : '--';
 
@@ -88,7 +77,7 @@ export function ScoreboardPanel({ error = '', summary }: ScoreboardPanelProps) {
 }
 
 function taskStatusClass(status: string): string {
-  switch (status) {
+  switch (normalizeTaskStatus(status)) {
     case 'success':
       return 'success';
     case 'failed':
@@ -99,6 +88,34 @@ function taskStatusClass(status: string): string {
       return 'processing';
     default:
       return 'info';
+  }
+}
+
+function normalizeTaskStatus(status: string): string {
+  switch (status.trim().toLowerCase()) {
+    case 'queued':
+    case 'planning':
+    case 'awaiting_approval':
+    case 'approval_pending':
+      return 'pending';
+    case 'executing':
+    case 'running':
+    case 'in_progress':
+      return 'running';
+    case 'validating':
+    case 'verifying':
+      return 'validating';
+    case 'completed':
+    case 'done':
+      return 'success';
+    case 'rolled_back':
+    case 'rollback':
+    case 'blocked':
+    case 'cancelled':
+    case 'canceled':
+      return 'failed';
+    default:
+      return status.trim().toLowerCase();
   }
 }
 

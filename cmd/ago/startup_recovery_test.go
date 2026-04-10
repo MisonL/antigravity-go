@@ -86,6 +86,9 @@ func TestPrepareStartupConfigRepairsBrokenConfig(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dataDir, "sessions")); err != nil {
 		t.Fatalf("expected sessions directory after repair: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(dataDir, "executions")); err != nil {
+		t.Fatalf("expected executions directory after repair: %v", err)
+	}
 	repairedCfg, err := config.LoadFromDataDir(dataDir)
 	if err != nil {
 		t.Fatalf("expected repaired config to be readable: %v", err)

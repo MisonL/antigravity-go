@@ -23,6 +23,10 @@ type TaskStore interface {
 	UpdateTask(id, status, evidence, rollbackPoint string) error
 }
 
+type TaskEventStore interface {
+	AppendTaskEvent(id, eventType string, data map[string]any) error
+}
+
 type Agent struct {
 	mu               sync.RWMutex
 	workspaceMu      sync.RWMutex
@@ -38,6 +42,7 @@ type Agent struct {
 	maxContextTokens int
 	hasDeniedTool    bool // Track if any tool call was denied by user in this session
 	taskStore        TaskStore
+	activeTaskID     string
 	workspace        WorkspaceContext
 }
 
@@ -403,6 +408,9 @@ func (a *Agent) Run(ctx context.Context, input string, localCallback ToolCallbac
 	a.messages = append(a.messages, msg)
 	a.tokenUsage += estimateMessageUsage(msg)
 	a.mu.Unlock()
+	a.appendActiveTaskEvent("user_message", map[string]any{
+		"content": input,
+	})
 
 	maxTurns := toolTurnLimit
 	for i := 0; i < maxTurns; i++ {
@@ -420,6 +428,10 @@ func (a *Agent) Run(ctx context.Context, input string, localCallback ToolCallbac
 		a.messages = append(a.messages, resp)
 		a.tokenUsage += estimateMessageUsage(resp)
 		a.mu.Unlock()
+		a.appendActiveTaskEvent("assistant_message", map[string]any{
+			"content":    resp.Content,
+			"tool_calls": len(resp.ToolCalls),
+		})
 
 		// Check for tool calls
 		if len(resp.ToolCalls) == 0 {
@@ -462,6 +474,9 @@ func (a *Agent) RunStream(ctx context.Context, input string, cb llm.StreamCallba
 	a.messages = append(a.messages, msg)
 	a.tokenUsage += estimateMessageUsage(msg)
 	a.mu.Unlock()
+	a.appendActiveTaskEvent("user_message", map[string]any{
+		"content": input,
+	})
 
 	maxTurns := toolTurnLimit
 	for i := 0; i < maxTurns; i++ {
@@ -479,6 +494,10 @@ func (a *Agent) RunStream(ctx context.Context, input string, cb llm.StreamCallba
 		a.messages = append(a.messages, resp)
 		a.tokenUsage += estimateMessageUsage(resp)
 		a.mu.Unlock()
+		a.appendActiveTaskEvent("assistant_message", map[string]any{
+			"content":    resp.Content,
+			"tool_calls": len(resp.ToolCalls),
+		})
 
 		// Check for tool calls
 		if len(resp.ToolCalls) == 0 {
@@ -543,6 +562,10 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, localCallb
 	if callback != nil {
 		callback("start", tc.Name, tc.Args, "")
 	}
+	a.appendActiveTaskEvent("tool_start", map[string]any{
+		"name": tc.Name,
+		"args": tc.Args,
+	})
 
 	rollbackPlan := a.prepareRollbackPlan(ctx, tc.Name, tc.Args)
 
@@ -569,6 +592,11 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, localCallb
 			if callback != nil {
 				callback("error", tc.Name, tc.Args, msg)
 			}
+			a.appendActiveTaskEvent("tool_error", map[string]any{
+				"name":   tc.Name,
+				"args":   tc.Args,
+				"result": msg,
+			})
 			return
 		}
 	}
@@ -586,6 +614,15 @@ func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall, localCallb
 	if callback != nil {
 		callback("end", tc.Name, tc.Args, result)
 	}
+	eventType := "tool_end"
+	if err != nil {
+		eventType = "tool_error"
+	}
+	a.appendActiveTaskEvent(eventType, map[string]any{
+		"name":   tc.Name,
+		"args":   tc.Args,
+		"result": result,
+	})
 
 	a.addToolResult(tc.ID, tc.Name, result)
 }
@@ -648,6 +685,15 @@ func (a *Agent) executeChunkApprovedTool(
 	if callback != nil {
 		callback("end", tc.Name, tc.Args, result)
 	}
+	eventType := "tool_end"
+	if err != nil {
+		eventType = "tool_error"
+	}
+	a.appendActiveTaskEvent(eventType, map[string]any{
+		"name":   tc.Name,
+		"args":   tc.Args,
+		"result": result,
+	})
 
 	a.addToolResult(tc.ID, tc.Name, result)
 }
@@ -702,7 +748,14 @@ func (a *Agent) startTaskRun(ctx context.Context, input string) *taskRunRecord {
 		return nil
 	}
 	record.ID = id
+	a.mu.Lock()
+	a.activeTaskID = id
+	a.mu.Unlock()
 	a.updateTaskStore(record, taskStatusRunning, "task execution started", record.RollbackPoint)
+	a.appendActiveTaskEvent("execution.started", map[string]any{
+		"input":          input,
+		"rollback_point": record.RollbackPoint,
+	})
 	return record
 }
 
@@ -715,6 +768,10 @@ func (a *Agent) markTaskValidating(ctx context.Context, record *taskRunRecord, o
 		record.RollbackPoint = rollbackPoint
 	}
 	a.updateTaskStore(record, taskStatusValidating, buildTaskEvidence(a.SnapshotMessages(), output), record.RollbackPoint)
+	a.appendActiveTaskEvent("execution.validating", map[string]any{
+		"rollback_point": record.RollbackPoint,
+		"result":         output,
+	})
 }
 
 func (a *Agent) finishTaskRun(ctx context.Context, record *taskRunRecord, output *string, runErr *error) {
@@ -725,12 +782,29 @@ func (a *Agent) finishTaskRun(ctx context.Context, record *taskRunRecord, output
 	if rollbackPoint := a.captureCurrentStepID(ctx); rollbackPoint != "" {
 		record.RollbackPoint = rollbackPoint
 	}
+	defer func() {
+		a.mu.Lock()
+		if a.activeTaskID == record.ID {
+			a.activeTaskID = ""
+		}
+		a.mu.Unlock()
+	}()
 
 	if *runErr != nil {
 		a.updateTaskStore(record, taskStatusFailed, buildTaskEvidence(a.SnapshotMessages(), (*runErr).Error()), record.RollbackPoint)
+		a.appendActiveTaskEvent("execution.finished", map[string]any{
+			"status":         taskStatusFailed,
+			"rollback_point": record.RollbackPoint,
+			"result":         (*runErr).Error(),
+		})
 		return
 	}
 	a.updateTaskStore(record, taskStatusSuccess, buildTaskEvidence(a.SnapshotMessages(), *output), record.RollbackPoint)
+	a.appendActiveTaskEvent("execution.finished", map[string]any{
+		"status":         taskStatusSuccess,
+		"rollback_point": record.RollbackPoint,
+		"result":         *output,
+	})
 }
 
 func (a *Agent) updateTaskStore(record *taskRunRecord, status, evidence, rollbackPoint string) {
@@ -790,6 +864,23 @@ func truncateTaskEvidence(text string) string {
 		return text
 	}
 	return text[:maxLen] + "\n...(truncated)"
+}
+
+func (a *Agent) appendActiveTaskEvent(eventType string, data map[string]any) {
+	a.mu.RLock()
+	taskID := strings.TrimSpace(a.activeTaskID)
+	store := a.taskStore
+	a.mu.RUnlock()
+	if taskID == "" || store == nil {
+		return
+	}
+	eventStore, ok := store.(TaskEventStore)
+	if !ok {
+		return
+	}
+	if err := eventStore.AppendTaskEvent(taskID, eventType, data); err != nil {
+		log.Printf("task event append failed (%s): %v", eventType, err)
+	}
 }
 
 func shouldRunCSEFeedback(toolName string) bool {

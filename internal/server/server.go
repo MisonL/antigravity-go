@@ -27,24 +27,25 @@ import (
 )
 
 type Server struct {
-	port          int
-	hostAddr      string
-	authToken     string
-	approvals     string
-	cfgMu         sync.RWMutex
-	cfg           config.Config
-	workspaceRoot string
-	sessionsRoot  string
-	tasksRoot     string
-	host          *core.Host
-	agent         *agent.Agent
-	client        *rpc.Client // Added rpc.Client
-	mcp           *corecap.McpManager
-	lsp           *tools.LSPManager
-	ws            *WSServer
-	httpServer    *http.Server     // Kept for Start/Stop
-	tm            *TerminalManager // Kept for HandleTerminalWS and NewWSServer
-	trajectory    session.TrajectoryGetter
+	port           int
+	hostAddr       string
+	authToken      string
+	approvals      string
+	cfgMu          sync.RWMutex
+	cfg            config.Config
+	workspaceRoot  string
+	sessionsRoot   string
+	tasksRoot      string
+	executionsRoot string
+	host           *core.Host
+	agent          *agent.Agent
+	client         *rpc.Client // Added rpc.Client
+	mcp            *corecap.McpManager
+	lsp            *tools.LSPManager
+	ws             *WSServer
+	httpServer     *http.Server     // Kept for Start/Stop
+	tm             *TerminalManager // Kept for HandleTerminalWS and NewWSServer
+	trajectory     session.TrajectoryGetter
 }
 
 func NewServer(cfg *config.Config, host *core.Host, agt *agent.Agent, lsp *tools.LSPManager, client *rpc.Client) *Server {
@@ -60,29 +61,33 @@ func NewServer(cfg *config.Config, host *core.Host, agt *agent.Agent, lsp *tools
 
 	sessionsRoot := ""
 	tasksRoot := ""
+	executionsRoot := ""
 	if serverCfg.DataDir != "" {
 		sessionsRoot = filepath.Join(serverCfg.DataDir, "sessions")
 		_ = os.MkdirAll(sessionsRoot, 0755)
 		tasksRoot = filepath.Join(serverCfg.DataDir, "tasks")
 		_ = os.MkdirAll(tasksRoot, 0755)
+		executionsRoot = filepath.Join(serverCfg.DataDir, "executions")
+		_ = os.MkdirAll(executionsRoot, 0755)
 	}
 	tm := NewTerminalManager()
 	s := &Server{
-		port:          serverCfg.WebPort,
-		hostAddr:      serverCfg.WebHost,
-		authToken:     serverCfg.AuthToken,
-		approvals:     serverCfg.Approvals,
-		cfg:           *serverCfg,
-		workspaceRoot: workspaceRoot,
-		sessionsRoot:  sessionsRoot,
-		tasksRoot:     tasksRoot,
-		host:          host,
-		agent:         agt,
-		client:        client,
-		mcp:           corecap.NewMcpManager(client),
-		lsp:           lsp,
-		ws:            NewWSServer(agt, client, tm, workspaceRoot, serverCfg.Approvals, sessionsRoot), // Initialized WSServer with client
-		tm:            tm,
+		port:           serverCfg.WebPort,
+		hostAddr:       serverCfg.WebHost,
+		authToken:      serverCfg.AuthToken,
+		approvals:      serverCfg.Approvals,
+		cfg:            *serverCfg,
+		workspaceRoot:  workspaceRoot,
+		sessionsRoot:   sessionsRoot,
+		tasksRoot:      tasksRoot,
+		executionsRoot: executionsRoot,
+		host:           host,
+		agent:          agt,
+		client:         client,
+		mcp:            corecap.NewMcpManager(client),
+		lsp:            lsp,
+		ws:             NewWSServer(agt, client, tm, workspaceRoot, serverCfg.Approvals, sessionsRoot), // Initialized WSServer with client
+		tm:             tm,
 	}
 
 	// Wire up log broadcasting
@@ -132,6 +137,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/memories", s.handleMemories)
 	mux.HandleFunc("/api/mcp", s.handleMCP)
 	mux.HandleFunc("/api/observability/summary", s.handleObservabilitySummary)
+	mux.HandleFunc("/api/executions/summary", s.handleExecutionsSummary)
+	mux.HandleFunc("/api/executions/", s.handleExecutionResource)
 	mux.HandleFunc("/api/tasks", s.handleTasks)
 	mux.HandleFunc("/api/rollback", s.handleRollbackStep)
 	mux.HandleFunc("/api/visual-self-test/sample", s.handleVisualSelfTestSample)

@@ -31,6 +31,11 @@ const LazyTrajectoryModal = lazy(async () => {
   return { default: module.TrajectoryModal };
 });
 
+const LazyExecutionModal = lazy(async () => {
+  const module = await import('./components/ExecutionModal');
+  return { default: module.ExecutionModal };
+});
+
 const LazyMemoryModal = lazy(async () => {
   const module = await import('./components/MemoryModal');
   return { default: module.MemoryModal };
@@ -148,6 +153,9 @@ function LayoutShell() {
           </button>
           <button className="badge badge-btn" data-testid="open-trajectory" onClick={() => void observability.handleOpenTrajectoryModal()} type="button">
             {t('app.action.trajectory')} {observability.observabilitySummary ? `(${observability.observabilitySummary.trajectories.count})` : ''}
+          </button>
+          <button className="badge badge-btn" data-testid="open-execution" onClick={() => void observability.handleOpenExecutionModal()} type="button">
+            {t('app.action.execution')} {observability.executionSummary ? `(${observability.executionSummary.total})` : ''}
           </button>
           <button className="badge badge-btn" data-testid="open-memory" onClick={() => void observability.handleOpenMemoryModal()} type="button">
             {t('app.action.memory')}
@@ -299,6 +307,23 @@ function LayoutShell() {
             selectedDetail={observability.selectedTrajectoryDetail}
             selectedId={observability.selectedTrajectoryId}
             steps={observability.trajectorySteps}
+          />
+        </Suspense>
+      )}
+
+      {observability.showExecutionModal && (
+        <Suspense fallback={null}>
+          <LazyExecutionModal
+            detail={observability.executionDetail}
+            detailError={observability.executionDetailError}
+            detailLoading={observability.executionDetailLoading}
+            isLoading={observability.executionSummaryLoading}
+            items={observability.executionSummary?.executions ?? []}
+            listError={observability.taskSummaryError}
+            onClose={() => observability.setShowExecutionModal(false)}
+            onRefresh={() => void observability.handleOpenExecutionModal()}
+            onSelect={(id) => void observability.fetchExecutionDetail(id, true)}
+            selectedId={observability.selectedExecutionId}
           />
         </Suspense>
       )}

@@ -141,6 +141,36 @@ var registry = map[string]CommandDefinition{
 			return nil
 		},
 	},
+	"/executions": {
+		Name:        "/executions",
+		Description: tuiLocalizer().T("tui.command.executions.description"),
+		Action: func(m *Model, args []string) tea.Cmd {
+			markdown, err := m.executionSummaryMarkdown(10)
+			if err != nil {
+				m.addMessage(m.t("tui.command.executions.failed", err))
+				return nil
+			}
+			m.addMessage(markdown)
+			return nil
+		},
+	},
+	"/execution": {
+		Name:        "/execution",
+		Description: tuiLocalizer().T("tui.command.execution.description"),
+		Action: func(m *Model, args []string) tea.Cmd {
+			if len(args) < 1 {
+				m.addMessage(m.t("tui.command.execution.usage"))
+				return nil
+			}
+			markdown, err := m.executionDetailMarkdown(strings.TrimSpace(args[0]))
+			if err != nil {
+				m.addMessage(m.t("tui.command.execution.failed", err))
+				return nil
+			}
+			m.addMessage(markdown)
+			return nil
+		},
+	},
 	"/approvals": {
 		Name:        "/approvals",
 		Description: tuiLocalizer().T("tui.command.approvals.description"),
@@ -280,7 +310,7 @@ func init() {
 			sb.WriteString(m.t("tui.command.help.title"))
 
 			// Static ordered list
-			ordered := []string{"/help", "/mode", "/add", "/copy", "/save", "/load", "/context", "/status", "/approvals", "/clear", "/quit", "/exit"}
+			ordered := []string{"/help", "/mode", "/add", "/copy", "/save", "/load", "/context", "/status", "/executions", "/execution", "/approvals", "/clear", "/quit", "/exit"}
 
 			for _, cmd := range ordered {
 				if def, ok := registry[cmd]; ok {

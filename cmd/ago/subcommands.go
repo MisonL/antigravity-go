@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -337,16 +338,218 @@ func runResume(args []string) {
 	fmt.Printf("[INFO] 工作区: %s\n", workspaceRoot)
 	fmt.Printf("[INFO] Session: %s\n", rec.Meta.ID)
 
-	model := tui.NewModel(host, rpcClient, agt, permReqChan, cfg.Approvals, rec)
+	model := tui.NewModel(
+		host,
+		rpcClient,
+		agt,
+		permReqChan,
+		cfg.Approvals,
+		rec,
+		session.NewExecutionStore(filepath.Join(cfg.DataDir, "executions")),
+	)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("运行 TUI 失败: %v\n", err)
 	}
 }
 
+func runExecutions(args []string) {
+	fs := flag.NewFlagSet("executions", flag.ExitOnError)
+	dataDirF := fs.String("data", "", "Data directory")
+	limitF := fs.Int("limit", 10, "Max executions to show")
+	_ = fs.Parse(args)
+
+	cfg, err := config.Load()
+	if err != nil || cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	if *dataDirF != "" {
+		cfg.DataDir = *dataDirF
+	}
+
+	store := session.NewExecutionStore(filepath.Join(cfg.DataDir, "executions"))
+	records, err := store.ListExecutions()
+	if err != nil {
+		fmt.Printf("读取执行账本失败: %v\n", err)
+		return
+	}
+
+	fmt.Print(renderExecutionSummary(records, *limitF))
+}
+
+func runExecution(args []string) {
+	fs := flag.NewFlagSet("execution", flag.ExitOnError)
+	dataDirF := fs.String("data", "", "Data directory")
+	_ = fs.Parse(args)
+
+	if fs.NArg() != 1 {
+		fmt.Println("用法: ago execution <execution_id>")
+		return
+	}
+	executionID := strings.TrimSpace(fs.Arg(0))
+	if executionID == "" {
+		fmt.Println("execution_id 不能为空")
+		return
+	}
+
+	cfg, err := config.Load()
+	if err != nil || cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	if *dataDirF != "" {
+		cfg.DataDir = *dataDirF
+	}
+
+	store := session.NewExecutionStore(filepath.Join(cfg.DataDir, "executions"))
+	record, err := store.LoadExecution(executionID)
+	if err != nil {
+		fmt.Printf("读取执行详情失败: %v\n", err)
+		return
+	}
+	steps, err := store.LoadDerivedSteps(executionID)
+	if err != nil {
+		fmt.Printf("读取执行步骤失败: %v\n", err)
+		return
+	}
+	timeline, err := store.LoadTimeline(executionID)
+	if err != nil {
+		fmt.Printf("读取执行时间线失败: %v\n", err)
+		return
+	}
+
+	fmt.Print(renderExecutionDetail(record, steps, timeline))
+}
+
 func runMCP(args []string) { fmt.Println("MCP command: use 'ago mcp list' to see states.") }
 func runModels(args []string) {
 	fmt.Println("Models command: use 'ago models --provider iflow' to see list.")
+}
+
+func renderExecutionSummary(records []session.ExecutionRecord, limit int) string {
+	if len(records) == 0 {
+		return "当前没有执行记录。\n"
+	}
+	if limit <= 0 || limit > len(records) {
+		limit = len(records)
+	}
+
+	counts := map[string]int{}
+	for _, record := range records {
+		counts[strings.TrimSpace(record.Status)]++
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Execution Ledger\n")
+	sb.WriteString(fmt.Sprintf(
+		"总数: %d  成功: %d  失败: %d  进行中: %d\n\n",
+		len(records),
+		counts[session.ExecutionStatusSuccess],
+		counts[session.ExecutionStatusFailed]+counts[session.ExecutionStatusBlocked]+counts[session.ExecutionStatusRolledBack],
+		counts[session.ExecutionStatusPending]+counts[session.ExecutionStatusRunning]+counts[session.ExecutionStatusAwaitingApproval]+counts[session.ExecutionStatusValidating],
+	))
+
+	for _, record := range records[:limit] {
+		sb.WriteString(fmt.Sprintf(
+			"- %s | %s | %s | %s\n",
+			record.ID,
+			record.Status,
+			formatExecutionTime(record.UpdatedAt),
+			record.Reference,
+		))
+	}
+
+	if limit < len(records) {
+		sb.WriteString(fmt.Sprintf("\n还有 %d 条未展示。\n", len(records)-limit))
+	}
+
+	return sb.String()
+}
+
+func renderExecutionDetail(record *session.ExecutionRecord, steps []session.ExecutionStep, timeline []session.ExecutionEvent) string {
+	if record == nil {
+		return ""
+	}
+
+	sort.Slice(timeline, func(i, j int) bool {
+		return timeline[i].Time.Before(timeline[j].Time)
+	})
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Execution %s\n", record.ID))
+	sb.WriteString(fmt.Sprintf("Reference: %s\n", record.Reference))
+	sb.WriteString(fmt.Sprintf("Status: %s\n", record.Status))
+	sb.WriteString(fmt.Sprintf("Updated: %s\n", formatExecutionTime(record.UpdatedAt)))
+	if strings.TrimSpace(record.RollbackPoint) != "" {
+		sb.WriteString(fmt.Sprintf("Rollback Point: %s\n", record.RollbackPoint))
+	}
+	if strings.TrimSpace(record.LatestCheckpointID) != "" {
+		sb.WriteString(fmt.Sprintf("Checkpoint: %s\n", record.LatestCheckpointID))
+	}
+
+	sb.WriteString("\nDerived Steps\n")
+	if len(steps) == 0 {
+		sb.WriteString("- none\n")
+	} else {
+		for _, step := range steps {
+			summary := strings.Join(strings.Fields(strings.TrimSpace(step.Summary)), " ")
+			if summary != "" {
+				sb.WriteString(fmt.Sprintf(
+					"- %s | %s | %s | %s\n",
+					step.Title,
+					step.Status,
+					firstNonEmptyString(step.FinishedAt, step.StartedAt, "-"),
+					truncateExecutionLine(summary, 120),
+				))
+				continue
+			}
+			sb.WriteString(fmt.Sprintf(
+				"- %s | %s | %s\n",
+				step.Title,
+				step.Status,
+				firstNonEmptyString(step.FinishedAt, step.StartedAt, "-"),
+			))
+		}
+	}
+
+	sb.WriteString("\nEvent Timeline\n")
+	if len(timeline) == 0 {
+		sb.WriteString("- none\n")
+	} else {
+		for _, event := range timeline {
+			message := firstNonEmptyString(strings.TrimSpace(event.Message), strings.TrimSpace(event.Type), "-")
+			sb.WriteString(fmt.Sprintf(
+				"- %s | %s | %s\n",
+				formatExecutionTime(event.Time),
+				firstNonEmptyString(strings.TrimSpace(event.Type), "event"),
+				truncateExecutionLine(message, 120),
+			))
+		}
+	}
+
+	return sb.String()
+}
+
+func formatExecutionTime(ts time.Time) string {
+	if ts.IsZero() {
+		return "-"
+	}
+	return ts.UTC().Format(time.RFC3339)
+}
+
+func truncateExecutionLine(text string, maxLen int) string {
+	if maxLen <= 0 || len(text) <= maxLen {
+		return text
+	}
+	return text[:maxLen-3] + "..."
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func buildProvider(cfg *config.Config) (llm.Provider, error) {
@@ -355,7 +558,7 @@ func buildProvider(cfg *config.Config) (llm.Provider, error) {
 
 func buildBaseAgent(cfg *config.Config, provider llm.Provider, host *core.Host, rpcClient *rpc.Client, lspMgr *tools.LSPManager, cwd string) *agent.Agent {
 	baseAgt := agent.NewAgent(provider, nil, cfg.MaxContext)
-	baseAgt.SetTaskStore(session.NewTaskManager(filepath.Join(cfg.DataDir, "tasks")))
+	baseAgt.SetTaskStore(session.NewExecutionStore(filepath.Join(cfg.DataDir, "executions")))
 	baseAgt.SetWorkspaceContext(agent.WorkspaceContext{
 		Root:  cwd,
 		Label: "primary",

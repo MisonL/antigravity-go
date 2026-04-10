@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { TaskSummaryResponse } from '../components/ScoreboardPanel';
 import {
   normalizeMemories,
   normalizeTrajectories,
@@ -12,6 +11,10 @@ import { useAppDomain } from './AppDomainContext';
 import {
   getErrorMessage,
   normalizeChatHistory,
+  normalizeExecutionDetail,
+  normalizeExecutionSummary,
+  type ExecutionDetailResponse,
+  type ExecutionSummaryResponse,
   type ObservabilityEvent,
   type ObservabilitySummary,
   type ResumeSessionResponse,
@@ -20,7 +23,12 @@ import {
 import { useAsyncResource } from './useAsyncResource';
 
 export interface ObservabilityDomainState {
+  executionDetail: ExecutionDetailResponse | null;
+  executionDetailError: string;
+  executionDetailLoading: boolean;
+  executionSummaryLoading: boolean;
   handleOpenMemoryModal: () => Promise<void>;
+  handleOpenExecutionModal: () => Promise<void>;
   handleOpenTrajectoryModal: () => Promise<void>;
   handleOpenVisualSelfTestModal: () => Promise<void>;
   latestObservabilityEvent: ObservabilityEvent | null;
@@ -39,11 +47,14 @@ export interface ObservabilityDomainState {
   selectedTrajectoryId: string;
   setShowMcpPanel: (show: boolean) => void;
   showMcpPanel: boolean;
+  showExecutionModal: boolean;
   showMemoryModal: boolean;
   showTrajectoryModal: boolean;
   showVisualSelfTestModal: boolean;
-  taskSummary: TaskSummaryResponse | null;
+  taskSummary: ExecutionSummaryResponse | null;
   taskSummaryError: string;
+  executionSummary: ExecutionSummaryResponse | null;
+  selectedExecutionId: string;
   trajectoryDetailError: string;
   trajectoryDetailLoading: boolean;
   trajectorySteps: ReturnType<typeof normalizeTrajectorySteps>;
@@ -58,7 +69,9 @@ export interface ObservabilityDomainState {
   fetchVisualSelfTestSample: (force?: boolean) => Promise<void>;
   resumeTrajectorySession: (trajectoryId: string, syncLocation?: boolean, showSuccess?: boolean) => Promise<void>;
   rollbackToStep: (stepId: string) => Promise<void>;
+  fetchExecutionDetail: (id: string, force?: boolean) => Promise<void>;
   setShowMemoryModal: (show: boolean) => void;
+  setShowExecutionModal: (show: boolean) => void;
   setShowTrajectoryModal: (show: boolean) => void;
   setShowVisualSelfTestModal: (show: boolean) => void;
   setVisualSelfTestTask: (task: string) => void;
@@ -77,7 +90,9 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   const [showTrajectoryModal, setShowTrajectoryModal] = useState(false);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
   const [showMcpPanel, setShowMcpPanel] = useState(false);
+  const [showExecutionModal, setShowExecutionModal] = useState(false);
   const [showVisualSelfTestModal, setShowVisualSelfTestModal] = useState(false);
+  const [selectedExecutionId, setSelectedExecutionId] = useState('');
   const [selectedTrajectoryId, setSelectedTrajectoryId] = useState('');
   const [rollbackStepId, setRollbackStepId] = useState('');
   const [rollbackError, setRollbackError] = useState('');
@@ -86,6 +101,13 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   const [resumeError, setResumeError] = useState('');
   const [resumeSuccess, setResumeSuccess] = useState('');
   const [latestObservabilityEvent, setLatestObservabilityEvent] = useState<ObservabilityEvent | null>(null);
+  const {
+    data: executionDetail,
+    error: executionDetailError,
+    loading: executionDetailLoading,
+    run: loadExecutionDetail,
+    setData: setExecutionDetail,
+  } = useAsyncResource<ExecutionDetailResponse | null>({ initialValue: null });
   const {
     data: trajectories,
     error: trajectoriesError,
@@ -111,10 +133,11 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     run: loadObservabilitySummary,
   } = useAsyncResource<ObservabilitySummary | null>({ initialValue: null });
   const {
-    data: taskSummary,
-    error: taskSummaryError,
-    run: loadTaskSummary,
-  } = useAsyncResource<TaskSummaryResponse | null>({ initialValue: null });
+    data: executionSummary,
+    error: executionSummaryError,
+    loading: executionSummaryLoading,
+    run: loadExecutionSummary,
+  } = useAsyncResource<ExecutionSummaryResponse | null>({ initialValue: null });
   const {
     data: visualSelfTestSample,
     error: visualSelfTestError,
@@ -139,17 +162,53 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     });
   }, [loadObservabilitySummary, t]);
 
-  const fetchTaskSummary = useCallback(async () => {
-    await loadTaskSummary(async () => {
-      const resp = await fetch('/api/tasks');
-      if (!resp.ok) {
-        throw new Error(t('observability.error.tasks_request', resp.status));
+  const fetchExecutionSummary = useCallback(async () => {
+    await loadExecutionSummary(async () => {
+      const endpoints = ['/api/executions/summary', '/api/tasks'];
+      let lastStatus = 0;
+      let lastBody = '';
+
+      for (const endpoint of endpoints) {
+        const resp = await fetch(endpoint);
+        if (resp.ok) {
+          return normalizeExecutionSummary(await resp.json());
+        }
+
+        lastStatus = resp.status;
+        lastBody = await resp.text();
+        if (resp.status !== 404 && resp.status !== 405) {
+          break;
+        }
       }
-      return await resp.json() as TaskSummaryResponse;
+
+      throw new Error(lastBody.trim() || t('observability.error.tasks_request', lastStatus || 404));
     }, {
       onError: (error) => getErrorMessage(error, t('observability.error.tasks_load')),
     });
-  }, [loadTaskSummary, t]);
+  }, [loadExecutionSummary, t]);
+
+  const fetchExecutionDetail = useCallback(async (id: string, force = false) => {
+    if (!id) {
+      return;
+    }
+    if (!force && id === selectedExecutionId && executionDetail) {
+      return;
+    }
+
+    setSelectedExecutionId(id);
+    await loadExecutionDetail(async () => {
+      const resp = await fetch(`/api/executions/${encodeURIComponent(id)}`);
+      if (!resp.ok) {
+        throw new Error(t('observability.error.execution_detail_request', resp.status));
+      }
+      return normalizeExecutionDetail(await resp.json());
+    }, {
+      onError: (error) => {
+        setExecutionDetail(null);
+        return getErrorMessage(error, t('observability.error.execution_detail_load'));
+      },
+    });
+  }, [executionDetail, loadExecutionDetail, selectedExecutionId, setExecutionDetail, t]);
 
   const fetchTrajectoryDetail = useCallback(async (id: string, force = false) => {
     if (!id) {
@@ -352,6 +411,36 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     await fetchTrajectories();
   }, [fetchTrajectories]);
 
+  const handleOpenExecutionModal = useCallback(async () => {
+    setShowExecutionModal(true);
+    const summary = await loadExecutionSummary(async () => {
+      const endpoints = ['/api/executions/summary', '/api/tasks'];
+      let lastStatus = 0;
+      let lastBody = '';
+
+      for (const endpoint of endpoints) {
+        const resp = await fetch(endpoint);
+        if (resp.ok) {
+          return normalizeExecutionSummary(await resp.json());
+        }
+
+        lastStatus = resp.status;
+        lastBody = await resp.text();
+        if (resp.status !== 404 && resp.status !== 405) {
+          break;
+        }
+      }
+
+      throw new Error(lastBody.trim() || t('observability.error.tasks_request', lastStatus || 404));
+    }, {
+      onError: (error) => getErrorMessage(error, t('observability.error.tasks_load')),
+    });
+    const nextId = summary?.current_execution?.id || summary?.executions[0]?.id || selectedExecutionId;
+    if (nextId) {
+      await fetchExecutionDetail(nextId, true);
+    }
+  }, [fetchExecutionDetail, loadExecutionSummary, selectedExecutionId, t]);
+
   const handleOpenMemoryModal = useCallback(async () => {
     setShowMemoryModal(true);
     await fetchMemories();
@@ -378,17 +467,17 @@ export function useObservabilityDomain(): ObservabilityDomainState {
 
   useEffect(() => {
     fetchObservabilitySummary();
-    fetchTaskSummary();
-  }, [fetchObservabilitySummary, fetchTaskSummary]);
+    fetchExecutionSummary();
+  }, [fetchExecutionSummary, fetchObservabilitySummary]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      fetchTaskSummary();
+      fetchExecutionSummary();
     }, 3000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [fetchTaskSummary]);
+  }, [fetchExecutionSummary]);
 
   useEffect(() => {
     if (!initialResumeTrajectoryId || !chatBridge) {
@@ -403,7 +492,11 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     }
 
     void fetchObservabilitySummary();
-    void fetchTaskSummary();
+    void fetchExecutionSummary();
+
+    if (showExecutionModal && selectedExecutionId) {
+      void fetchExecutionDetail(selectedExecutionId, true);
+    }
 
     if ((latestObservabilityEvent.plane === 'trajectory' || latestObservabilityEvent.plane === 'workspace') && showTrajectoryModal) {
       void fetchTrajectories(true);
@@ -412,23 +505,33 @@ export function useObservabilityDomain(): ObservabilityDomainState {
       void fetchMemories(true);
     }
   }, [
+    fetchExecutionDetail,
     fetchMemories,
     fetchObservabilitySummary,
-    fetchTaskSummary,
+    fetchExecutionSummary,
     fetchTrajectories,
     latestObservabilityEvent,
+    selectedExecutionId,
+    showExecutionModal,
     showMemoryModal,
     showTrajectoryModal,
   ]);
 
   return {
+    executionDetail,
+    executionDetailError,
+    executionDetailLoading,
+    executionSummaryLoading,
     fetchMemories,
+    fetchExecutionDetail,
     fetchTrajectories,
     fetchTrajectoryDetail,
     fetchVisualSelfTestSample,
+    handleOpenExecutionModal,
     handleOpenMemoryModal,
     handleOpenTrajectoryModal,
     handleOpenVisualSelfTestModal,
+    executionSummary,
     latestObservabilityEvent,
     memories,
     memoriesError,
@@ -443,19 +546,22 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     rollbackStepId,
     rollbackSuccess,
     rollbackToStep,
+    selectedExecutionId,
     selectedTrajectoryDetail,
     selectedTrajectoryId,
+    setShowExecutionModal,
     setShowMcpPanel,
     setShowMemoryModal,
     setShowTrajectoryModal,
     setShowVisualSelfTestModal,
+    showExecutionModal,
     setVisualSelfTestTask,
     showMcpPanel,
     showMemoryModal,
     showTrajectoryModal,
     showVisualSelfTestModal,
-    taskSummary,
-    taskSummaryError,
+    taskSummary: executionSummary,
+    taskSummaryError: executionSummaryError,
     trajectoryDetailError,
     trajectoryDetailLoading,
     trajectorySteps,

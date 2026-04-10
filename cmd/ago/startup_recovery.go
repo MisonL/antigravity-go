@@ -107,7 +107,7 @@ func inspectStartupIssues(dataDir string, configPath string, loadErr error) []st
 		})
 	}
 
-	for _, name := range []string{"sessions", "tasks", "deployments"} {
+	for _, name := range []string{"sessions", "tasks", "executions", "deployments"} {
 		target := filepath.Join(dataDir, name)
 		if info, err := os.Stat(target); err == nil && !info.IsDir() {
 			issues = append(issues, startupIssue{
@@ -169,7 +169,7 @@ func autoRepairStartup(dataDir string, configPath string, loadedCfg *config.Conf
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, nil, fmt.Errorf("自动修复失败，无法创建数据目录: %w", err)
 	}
-	for _, name := range []string{"sessions", "tasks", "deployments"} {
+	for _, name := range []string{"sessions", "tasks", "executions", "deployments"} {
 		if err := os.MkdirAll(filepath.Join(dataDir, name), 0755); err != nil {
 			return nil, nil, fmt.Errorf("自动修复失败，无法创建 %s: %w", name, err)
 		}

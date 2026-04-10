@@ -44,6 +44,7 @@ type fakeTaskStore struct {
 	createdReference string
 	createdRollback  string
 	updates          []taskStoreUpdate
+	events           []taskStoreEvent
 }
 
 type taskStoreUpdate struct {
@@ -51,6 +52,12 @@ type taskStoreUpdate struct {
 	status        string
 	evidence      string
 	rollbackPoint string
+}
+
+type taskStoreEvent struct {
+	id        string
+	eventType string
+	data      map[string]any
 }
 
 func (s *fakeTaskStore) CreateTask(reference, rollbackPoint string) (string, error) {
@@ -65,6 +72,15 @@ func (s *fakeTaskStore) UpdateTask(id, status, evidence, rollbackPoint string) e
 		status:        status,
 		evidence:      evidence,
 		rollbackPoint: rollbackPoint,
+	})
+	return nil
+}
+
+func (s *fakeTaskStore) AppendTaskEvent(id, eventType string, data map[string]any) error {
+	s.events = append(s.events, taskStoreEvent{
+		id:        id,
+		eventType: eventType,
+		data:      data,
 	})
 	return nil
 }
@@ -163,6 +179,84 @@ func TestRunFailsWhenProviderIsMissing(t *testing.T) {
 	if err := agt.RunStream(context.Background(), "hello", nil, nil); err == nil {
 		t.Fatal("expected RunStream to fail when provider is missing")
 	}
+}
+
+func TestRunEmitsExecutionEventsToTaskStore(t *testing.T) {
+	provider := &scriptedProvider{
+		responses: []llm.Message{
+			{
+				Role: llm.RoleAssistant,
+				ToolCalls: []llm.ToolCall{
+					{ID: "call-1", Name: "write_file", Args: `{"path":"demo.txt","content":"ok"}`},
+				},
+			},
+			{
+				Role:    llm.RoleAssistant,
+				Content: "PASS\n- write path reviewed",
+			},
+			{
+				Role:    llm.RoleAssistant,
+				Content: "done",
+			},
+		},
+	}
+
+	agt := NewAgent(provider, nil, 4096)
+	store := &fakeTaskStore{}
+	agt.SetTaskStore(store)
+	agt.RegisterTool(tools.Tool{
+		Definition: llm.ToolDefinition{Name: "write_file"},
+		Execute: func(ctx context.Context, args json.RawMessage) (string, error) {
+			return "written", nil
+		},
+	})
+	agt.RegisterTool(tools.Tool{
+		Definition: llm.ToolDefinition{Name: diagnosticsToolName},
+		Execute: func(ctx context.Context, args json.RawMessage) (string, error) {
+			return "{\"diagnostics\":[]}", nil
+		},
+	})
+
+	result, err := agt.Run(context.Background(), "write file", nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("unexpected final result: %q", result)
+	}
+	if len(store.events) == 0 {
+		t.Fatal("expected task store events to be recorded")
+	}
+
+	eventTypes := make([]string, 0, len(store.events))
+	for _, event := range store.events {
+		eventTypes = append(eventTypes, event.eventType)
+	}
+	expected := []string{"execution.started", "user_message", "assistant_message", "tool_start", "execution.validating", "execution.finished"}
+	for _, name := range expected {
+		found := false
+		for _, eventType := range eventTypes {
+			if eventType == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected event %q in %v", name, eventTypes)
+		}
+	}
+	if !containsTaskEventType(eventTypes, "tool_end") && !containsTaskEventType(eventTypes, "tool_error") {
+		t.Fatalf("expected one terminal tool event in %v", eventTypes)
+	}
+}
+
+func containsTaskEventType(eventTypes []string, want string) bool {
+	for _, eventType := range eventTypes {
+		if eventType == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRunFinalizesTaskWithMemorySave(t *testing.T) {

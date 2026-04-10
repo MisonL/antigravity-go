@@ -91,6 +91,7 @@ type Model struct {
 
 	approvalMode string
 	rec          *session.Recorder
+	executions   *session.ExecutionStore
 
 	// Autocomplete state
 	suggestions   []string
@@ -108,7 +109,7 @@ type PermissionRequest struct {
 type PermissionMsg PermissionRequest
 
 // NewModel creates a new TUI model.
-func NewModel(host *core.Host, client *rpc.Client, agt *agent.Agent, permChan chan PermissionRequest, approvalMode string, rec *session.Recorder) Model {
+func NewModel(host *core.Host, client *rpc.Client, agt *agent.Agent, permChan chan PermissionRequest, approvalMode string, rec *session.Recorder, executions *session.ExecutionStore) Model {
 	ta := textarea.New()
 	ta.Placeholder = tuiLocalizer().T("tui.input.placeholder")
 	ta.Focus()
@@ -130,6 +131,7 @@ func NewModel(host *core.Host, client *rpc.Client, agt *agent.Agent, permChan ch
 		permReqChan:  permChan,
 		approvalMode: strings.ToLower(strings.TrimSpace(approvalMode)),
 		rec:          rec,
+		executions:   executions,
 	}
 
 	// 若传入 recorder 且存在历史消息，预加载到视图（用于 resume）

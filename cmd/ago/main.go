@@ -50,6 +50,12 @@ func main() {
 		case "resume":
 			runResume(os.Args[2:])
 			return
+		case "executions":
+			runExecutions(os.Args[2:])
+			return
+		case "execution":
+			runExecution(os.Args[2:])
+			return
 		case "models":
 			runModels(os.Args[2:])
 			return
@@ -395,7 +401,15 @@ func main() {
 		})
 	}
 
-	model := tui.NewModel(host, client, agt, permReqChan, cfg.Approvals, tuiRec)
+	model := tui.NewModel(
+		host,
+		client,
+		agt,
+		permReqChan,
+		cfg.Approvals,
+		tuiRec,
+		session.NewExecutionStore(filepath.Join(cfg.DataDir, "executions")),
+	)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "运行 TUI 失败: %v\n", err)
