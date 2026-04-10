@@ -34,7 +34,7 @@ func (h *Host) startProcess() error {
 		"--enable_lsp",
 		"--gemini_dir", h.dataDir,
 		"--app_data_dir", ".",
-		"--random_port=true",
+		"--http_server_port=0",
 		"--logtostderr=true",
 	)
 

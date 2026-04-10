@@ -8,5 +8,5 @@ APP_DATA_DIR=$3
   --enable_lsp \
   --gemini_dir "$GEMINI_DIR" \
   --app_data_dir "$APP_DATA_DIR" \
-  --random_port=true \
+  --http_server_port=0 \
   --logtostderr=true
