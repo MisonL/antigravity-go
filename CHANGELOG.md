@@ -1,61 +1,74 @@
-# Changelog
+# 更新日志
 
-All notable changes to this project will be documented in this file.
+本文档记录项目的重要版本变更。
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+版本记录遵循“语义化版本”原则，并按版本倒序维护。
+
+## [0.2.1] - 2026-04-10
+
+### 新增
+- 新增一轮完整复核记录，覆盖内核兼容、Web 工作台、构建产物与接口验证。
+- 新增运行状态消息的用户可读映射，避免在界面中直接暴露内部工具名与数据面标识。
+
+### 变更
+- 将仓库内 Markdown 文档统一收敛为中文表述。
+- 将 Web 工作台对外文案进一步产品化，移除 `MCP Services`、`Raw JSON`、`Target URL` 等工程化表达。
+- 更新前端嵌入产物与 `ago` 二进制，使仓库源码、构建产物和发布文件保持一致。
+
+### 修复
+- 修复宿主启动参数与最新 `antigravity_core` 运行时不兼容的问题，改为使用 `--http_server_port=0`。
+- 修复后端透传到 Web 界面的审批摘要、视觉检查任务和运行状态文案仍暴露内部实现名的问题。
+- 修复英文快捷提示词中直接出现仓库内部文件路径和工具名的问题。
 
 ## [0.2.0] - 2026-04-09
 
-### Added
-- Added repository-level contributor guidance in `AGENTS.md` to align local execution, validation, and review behavior.
-- Added query-token bootstrap hardening tests and secret redaction coverage for session output handling.
+### 新增
+- 在 `AGENTS.md` 中补充仓库级协作约束，统一本地执行、验证和复核行为。
+- 增加查询参数令牌加固测试，以及会话输出中的敏感信息脱敏覆盖。
 
-### Changed
-- Switched the embedded web console to lazy-load heavy overlays and panels, reducing the primary frontend entry chunk to about 57 kB.
-- Localized Monaco assets into the repository build output instead of relying on external CDN delivery.
-- Updated the core runtime sync flow for Antigravity `1.22.2`, including explicit handling when upstream app bundles no longer ship `fd`.
+### 变更
+- Web 控制台改为懒加载重型面板和弹窗，降低前端主入口包体积。
+- Monaco 资源改为随仓库构建产物一并输出，不再依赖外部 CDN。
+- 更新 Antigravity `1.22.2` 的内核同步链路，并显式处理上游应用不再附带 `fd` 的情况。
 
-### Fixed
-- Stripped bootstrap tokens from redirected URLs after cookie establishment and hardened proxy-aware secure cookie handling.
-- Tightened workspace path sanitization to reject symlink escapes outside the configured workspace root.
-- Removed stale, unusable local `fd` artifacts from the update flow and recorded missing-tool state explicitly in `CORE_VERSION.json`.
+### 修复
+- 去除重定向 URL 中的启动令牌，并增强代理场景下的安全 Cookie 处理。
+- 收紧工作区路径清洗逻辑，拒绝符号链接跳出工作区根目录。
+- 清理更新流程中已失效的本地 `fd` 残留，并在 `CORE_VERSION.json` 中显式记录缺失状态。
 
 ## [0.1.0] - 2026-03-24
 
-### Added
-- **Global Branding**: Standardized project name to **Antigravity-Go** and command to `ago`.
-- **Industrial Backend**: Introduced generic RPC wrappers and consistent error handling in `internal/corecap`.
-- **Frontend Modernization**: Migrated workspace to **Bun 1.3.9** and **Vite 8.0.2**.
-- **Commander Paradigm 2.0**: Enforced strict 0px border-radius and minimalist UI aesthetics across all components.
-- **Enhanced Setup**: Added `Shift+Tab` support for returning to previous steps in the TUI setup wizard.
-- **Self-Healing Infrastructure**: Implemented `ago doctor` with environment auto-repair and safe-start capabilities.
-- **MCP Ecosystem**: Full Model Context Protocol (MCP) integration with dynamic mounting and config overriding.
-- **Data Plane Convergence**: Shared `AsyncContent` components for Trajectory, Memory, and Approval modals.
-- **Robust Observability**: Unified task ledger with success rate statistics and failure backtracking.
+### 新增
+- 统一项目名称为 **Antigravity-Go**，命令名统一为 `ago`。
+- 引入 `internal/corecap` 通用 RPC 包装层与一致的错误处理方式。
+- 前端工作区迁移至 **Bun 1.3.9** 与 **Vite 8.0.2**。
+- 建立严格 `0px` 圆角的界面设计语言，并覆盖全部核心组件。
+- 为 TUI 初始化向导增加 `Shift+Tab` 返回上一步支持。
+- 引入 `ago doctor`，支持环境自检、自修复和安全启动。
+- 接入完整的 MCP 生态，支持动态挂载与配置覆盖。
+- 统一运行轨迹、系统记忆与审批弹窗的数据面组件。
+- 建立任务账本与成功率统计能力。
 
-### Changed
-- Refactored `internal/server` to use centralized HTTP helpers for JSON and method validation.
-- Improved TUI stability by adding layout boundary checks to prevent panics on small windows.
-- Optimized frontend build pipeline reducing bundle size and increasing build speed by 70%.
-- Updated all technical documentation and README to reflect the industrialized architecture.
+### 变更
+- 重构 `internal/server`，统一 HTTP JSON 响应与方法校验辅助逻辑。
+- 增强 TUI 边界保护，避免小窗口下的布局 panic。
+- 优化前端构建链路，降低包体积并提升构建速度。
+- 更新 README 与技术文档，使之反映工业化后的架构状态。
 
-### Fixed
-- Fixed a panic in the TUI when terminal height was less than 15 lines.
-- Resolved race conditions in concurrent agent worker execution.
-- Fixed inconsistent padding and "soft" UI artifacts (shadows/blurs) to align with Commander Paradigm.
+### 修复
+- 修复 TUI 在终端高度小于 15 行时可能触发的 panic。
+- 修复并发智能体 worker 执行中的竞态问题。
+- 修复界面中不符合设计语言的阴影、模糊和软边视觉残留。
 
-### Removed
-- Removed legacy `agy` references and deprecated `cmd/debug` entry point.
-- Purged all `.bak` and temporary build artifacts from the repository.
-- Eliminated redundant `node_modules` and `package-lock.json` in favor of Bun lockfile.
+### 移除
+- 移除历史 `agy` 命名与废弃的 `cmd/debug` 入口。
+- 清理 `.bak` 与临时构建产物。
+- 移除冗余的 `node_modules` 和 `package-lock.json` 提交依赖，统一到 Bun 锁文件。
 
----
+## [0.0.x] - 历史阶段
 
-## [0.0.x] - Historical Milestones (Phase 1 - 5)
-
-- **Phase 5**: Implemented Containerized Deployment and GitHub Actions integration.
-- **Phase 4**: Introduced "Maker-Checker" workflow with automated code review (ReviewerAgent).
-- **Phase 3**: Added support for Visual Self-Testing and project metadata extraction.
-- **Phase 2**: Core Capability (Trajectory/Memory/Workspace) RPC orchestration.
-- **Phase 1**: Initial Host-Kernel handshake and multi-channel LLM provider factory.
+- **阶段 5**：完成容器化部署与 GitHub Actions 集成。
+- **阶段 4**：引入 Maker-Checker 机器预审工作流。
+- **阶段 3**：加入视觉自检与仓库元数据提取能力。
+- **阶段 2**：完成运行轨迹、系统记忆与工作区相关 RPC 编排。
+- **阶段 1**：建立宿主与内核握手链路，以及多通道模型服务工厂。

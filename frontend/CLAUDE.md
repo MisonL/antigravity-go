@@ -1,34 +1,34 @@
 ---
-description: Use Bun instead of Node.js, npm, pnpm, or vite.
+description: 在前端目录中优先使用 Bun，而不是 Node.js、npm、pnpm 或其他脚本入口。
 globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
 alwaysApply: false
 ---
 
-Default to using Bun instead of Node.js.
+默认优先使用 Bun，而不是 Node.js。
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+- 使用 `bun <file>` 代替 `node <file>` 或 `ts-node <file>`
+- 使用 `bun test` 代替 `jest` 或 `vitest`
+- 使用 `bun build <file.html|file.ts|file.css>` 代替 `webpack` 或 `esbuild`
+- 使用 `bun install` 代替 `npm install`、`yarn install` 或 `pnpm install`
+- 使用 `bun run <script>` 代替 `npm run <script>`、`yarn run <script>` 或 `pnpm run <script>`
+- 使用 `bunx <package> <command>` 代替 `npx <package> <command>`
+- Bun 会自动加载 `.env`，因此不要额外引入 `dotenv`
 
-## APIs
+## API 约定
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+- `Bun.serve()` 原生支持 WebSocket、HTTPS 和路由，默认不要引入 `express`
+- SQLite 优先使用 `bun:sqlite`，不要默认引入 `better-sqlite3`
+- Redis 优先使用 `Bun.redis`，不要默认引入 `ioredis`
+- PostgreSQL 优先使用 `Bun.sql`，不要默认引入 `pg` 或 `postgres.js`
+- `WebSocket` 为内建能力，默认不要引入 `ws`
+- 文件读写优先使用 `Bun.file`，而不是直接依赖 `node:fs` 的 `readFile` / `writeFile`
+- Shell 执行优先使用 `Bun.$\`...\``，而不是 `execa`
 
-## Testing
+## 测试
 
-Use `bun test` to run tests.
+使用 `bun test` 执行测试。
 
-```ts#index.test.ts
+```ts
 import { test, expect } from "bun:test";
 
 test("hello world", () => {
@@ -36,14 +36,14 @@ test("hello world", () => {
 });
 ```
 
-## Frontend
+## 前端开发约定
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+若使用 Bun 自带静态资源服务，可直接让 HTML 文件导入 React、CSS 与脚本资源；不要在这种场景下再额外引入 Vite。
 
-Server:
+服务端示例：
 
-```ts#index.ts
-import index from "./index.html"
+```ts
+import index from "./index.html";
 
 Bun.serve({
   routes: {
@@ -54,7 +54,6 @@ Bun.serve({
       },
     },
   },
-  // optional websocket support
   websocket: {
     open: (ws) => {
       ws.send("Hello, world!");
@@ -62,50 +61,15 @@ Bun.serve({
     message: (ws, message) => {
       ws.send(message);
     },
-    close: (ws) => {
-      // handle close
-    }
+    close: () => {
+      // 关闭处理
+    },
   },
   development: {
     hmr: true,
     console: true,
-  }
-})
+  },
+});
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+HTML 文件可以直接导入 `.tsx`、`.jsx` 或 `.js`；Bun 会自动完成转译与打包。`<link>` 标签可直接引用样式表，Bun 的 CSS 打包器会一并处理。

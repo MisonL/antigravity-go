@@ -1,11 +1,11 @@
-# Phase 2 全量开发成果终极复核
+# 阶段二全量开发成果终极复核
 
 日期: 2026-03-23
 
 ## 复核范围
 
 - `internal/rpc/` 新增文件: `memory.go`, `trajectory.go`, `actuation.go`, `browser.go`, `versioning.go`
-- `internal/corecap/` 所有 Manager 实现
+- `internal/corecap/` 全部管理器实现
 - `internal/agent/agent.go`
 - `internal/tools/core_v2.go` 及子文件
 - `cmd/ago/subcommands.go`
@@ -23,7 +23,7 @@
 - 风险:
   `Run` / `RunStream` 在最终回答路径上同步返回 `FinalizeTask` 的错误，违反“记忆失败不得阻塞主流程”的要求。
 - 修复:
-  在 `internal/agent/agent.go` 中将 `FinalizeTask` 调整为 best-effort 语义，仅记录日志，不再向主流程返回错误；同时保留 `Run` 与 `RunStream` 两条最终回答路径上的触发点。
+  在 `internal/agent/agent.go` 中将 `FinalizeTask` 调整为 尽力而为 语义，仅记录日志，不再向主流程返回错误；同时保留 `Run` 与 `RunStream` 两条最终回答路径上的触发点。
 - 位置:
   `internal/agent/agent.go:335`
   `internal/agent/agent.go:387`
