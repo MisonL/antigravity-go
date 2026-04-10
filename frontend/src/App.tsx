@@ -84,6 +84,7 @@ function LayoutShell() {
   const currentFileLabel = truncatePath(app.currentFile);
   const dataPlaneAnchored = Boolean(app.currentFile?.trim());
   const statusLabel = chat.status && chat.connected ? t('app.status.online') : t('app.status.reconnecting');
+  const fileStatusLabel = dataPlaneAnchored ? t('app.status.file_ready') : t('app.status.file_idle');
 
   useEffect(() => {
     if (!showDataPlane) {
@@ -124,7 +125,7 @@ function LayoutShell() {
                 aria-hidden="true"
                 className={`data-plane-indicator${dataPlaneAnchored ? ' is-anchored' : ''}`}
               />
-              <span>{dataPlaneAnchored ? 'Anchored' : 'Standby'}</span>
+              <span>{fileStatusLabel}</span>
             </span>
             {chat.indexStatus && !chat.indexStatus.includes('complete') && (
               <span className="command-hud__status-pill is-processing">{t('app.status.indexing')}</span>
@@ -160,7 +161,7 @@ function LayoutShell() {
           <button className="badge badge-btn" data-testid="open-memory" onClick={() => void observability.handleOpenMemoryModal()} type="button">
             {t('app.action.memory')}
           </button>
-          <button className="badge badge-btn" onClick={() => observability.setShowMcpPanel(true)} type="button">MCP</button>
+          <button className="badge badge-btn" onClick={() => observability.setShowMcpPanel(true)} type="button">{t('app.action.mcp')}</button>
           <button className="badge badge-btn" data-testid="open-visual-self-test" onClick={() => void observability.handleOpenVisualSelfTestModal()} type="button">{t('app.action.visual_self_test')}</button>
           <button className="badge badge-btn" onClick={() => setShowSettings(true)} type="button">{t('app.action.settings')}</button>
         </div>
@@ -197,81 +198,78 @@ function LayoutShell() {
         </section>
       </main>
 
-      <div
-        aria-hidden={!showDataPlane}
-        className={`data-plane-overlay${showDataPlane ? ' is-open' : ''}`}
-        onClick={() => setShowDataPlane(false)}
-      >
-        <aside
-          aria-label={t('app.data_plane.title')}
-          aria-modal="true"
-          className={`data-plane-drawer${showDataPlane ? ' is-open' : ''}`}
-          onClick={(event) => event.stopPropagation()}
-          role="dialog"
+      {showDataPlane && (
+        <div
+          className="data-plane-overlay is-open"
+          onClick={() => setShowDataPlane(false)}
         >
-          <div className="data-plane-drawer__header">
-            <div className="data-plane-drawer__heading">
-              <span className="data-plane-drawer__eyebrow">{t('app.data_plane.title')}</span>
-              <h3>{t('app.data_plane.subtitle')}</h3>
-              <p title={app.currentFile ?? undefined}>
-                {app.currentFile ? t('app.data_plane.file', currentFileLabel) : t('app.data_plane.empty')}
-              </p>
+          <aside
+            aria-label={t('app.data_plane.title')}
+            aria-modal="true"
+            className="data-plane-drawer is-open"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="data-plane-drawer__header">
+              <div className="data-plane-drawer__heading">
+                <span className="data-plane-drawer__eyebrow">{t('app.data_plane.title')}</span>
+                <h3>{t('app.data_plane.subtitle')}</h3>
+                <p title={app.currentFile ?? undefined}>
+                  {app.currentFile ? t('app.data_plane.file', currentFileLabel) : t('app.data_plane.empty')}
+                </p>
+              </div>
+              <div className="data-plane-drawer__actions">
+                <button
+                  className="btn-secondary command-button"
+                  onClick={() => app.setShowTerminal(!app.showTerminal)}
+                  type="button"
+                >
+                  {app.showTerminal ? t('app.action.hide_terminal_drawer') : t('app.action.show_terminal_drawer')}
+                </button>
+                <button className="btn-secondary command-button" onClick={() => setShowDataPlane(false)} type="button">
+                  {t('app.action.close_data_plane')}
+                </button>
+              </div>
             </div>
-            <div className="data-plane-drawer__actions">
-              <button
-                className="btn-secondary command-button"
-                onClick={() => app.setShowTerminal(!app.showTerminal)}
-                type="button"
-              >
-                {app.showTerminal ? t('app.action.hide_terminal_drawer') : t('app.action.show_terminal_drawer')}
-              </button>
-              <button className="btn-secondary command-button" onClick={() => setShowDataPlane(false)} type="button">
-                {t('app.action.close_data_plane')}
-              </button>
-            </div>
-          </div>
 
-          <div className="data-plane-drawer__body">
-            <aside className="data-plane-drawer__explorer glass-panel">
-              {showDataPlane ? (
+            <div className="data-plane-drawer__body">
+              <aside className="data-plane-drawer__explorer glass-panel">
                 <Suspense fallback={<PanelLoadingShell message={t('filetree.workspace_loading')} />}>
                   <LazyFileTree onSelectFile={app.setCurrentFile} />
                 </Suspense>
-              ) : (
-                <PanelLoadingShell message={t('filetree.workspace_loading')} />
-              )}
-            </aside>
+              </aside>
 
-            <section className="data-plane-drawer__workspace">
-              <div className="data-plane-drawer__editor glass-panel">
-                {showDataPlane && app.currentFile ? (
-                  <Suspense fallback={<PanelLoadingShell message={t('codeviewer.placeholder.loading')} />}>
-                    <LazyCodeViewer
-                      currentFile={app.currentFile}
-                      lastModified={app.fileRefreshTrigger}
-                      onCodeAction={chat.handleCodeAction}
-                    />
-                  </Suspense>
-                ) : (
-                  <PanelLoadingShell message={t('app.data_plane.empty')} />
-                )}
-              </div>
-
-              {app.showTerminal && (
-                <div className="data-plane-drawer__terminal glass-panel">
-                  <div className="panel-header terminal-header">
-                    <span>{t('app.panel.terminal')}</span>
-                    <button onClick={() => app.setShowTerminal(false)} type="button">{t('app.action.close')}</button>
-                  </div>
-                  <Suspense fallback={<PanelLoadingShell message={t('terminal.unavailable')} />}>
-                    <LazyTerminalPanel />
-                  </Suspense>
+              <section className="data-plane-drawer__workspace">
+                <div className="data-plane-drawer__editor glass-panel">
+                  {app.currentFile ? (
+                    <Suspense fallback={<PanelLoadingShell message={t('codeviewer.placeholder.loading')} />}>
+                      <LazyCodeViewer
+                        currentFile={app.currentFile}
+                        lastModified={app.fileRefreshTrigger}
+                        onCodeAction={chat.handleCodeAction}
+                      />
+                    </Suspense>
+                  ) : (
+                    <PanelLoadingShell message={t('app.data_plane.empty')} />
+                  )}
                 </div>
-              )}
-            </section>
-          </div>
-        </aside>
-      </div>
+
+                {app.showTerminal && (
+                  <div className="data-plane-drawer__terminal glass-panel">
+                    <div className="panel-header terminal-header">
+                      <span>{t('app.panel.terminal')}</span>
+                      <button onClick={() => app.setShowTerminal(false)} type="button">{t('app.action.close')}</button>
+                    </div>
+                    <Suspense fallback={<PanelLoadingShell message={t('terminal.unavailable')} />}>
+                      <LazyTerminalPanel />
+                    </Suspense>
+                  </div>
+                )}
+              </section>
+            </div>
+          </aside>
+        </div>
+      )}
 
       {chat.approvalReq && (
         <Suspense fallback={null}>

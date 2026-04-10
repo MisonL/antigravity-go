@@ -150,6 +150,48 @@ function countVisibleLines(section: PreviewSection, expanded: boolean): number {
   return section.lines.length;
 }
 
+function formatApprovalToolLabel(
+  t: (key: string, ...args: unknown[]) => string,
+  toolName: string,
+): string {
+  const labels: Record<string, string> = {
+    apply_core_edit: 'approval.tool.apply_core_edit',
+    write_file: 'approval.tool.write_file',
+    rollback_to_step: 'approval.tool.rollback_to_step',
+  };
+  return t(labels[toolName] ?? 'approval.tool.generic', toolName);
+}
+
+function formatApprovalCategoryLabel(
+  t: (key: string, ...args: unknown[]) => string,
+  category: string,
+): string {
+  const labels: Record<string, string> = {
+    file_write: 'approval.category.file_write',
+    workspace_edit: 'approval.category.workspace_edit',
+    trajectory_rollback: 'approval.category.trajectory_rollback',
+    tool_execution: 'approval.category.tool_execution',
+  };
+  return t(labels[category] ?? 'approval.category.generic', category);
+}
+
+function formatApprovalMetadataLabel(
+  t: (key: string, ...args: unknown[]) => string,
+  key: string,
+): string {
+  const labels: Record<string, string> = {
+    file_path: 'approval.meta.file_path',
+    path: 'approval.meta.path',
+    edit_count: 'approval.meta.edit_count',
+    content_bytes: 'approval.meta.content_bytes',
+    chunk_count: 'approval.meta.chunk_count',
+    step_id: 'approval.meta.step_id',
+    parse_error: 'approval.meta.parse_error',
+    preview_error: 'approval.meta.preview_error',
+  };
+  return t(labels[key] ?? 'approval.meta.generic', key);
+}
+
 export function ApprovalModal({ request, onDecision }: ApprovalModalProps) {
   const { t } = useAppDomain();
   const rawPreview = request.preview || request.args;
@@ -231,15 +273,15 @@ export function ApprovalModal({ request, onDecision }: ApprovalModalProps) {
           <div className="approval-meta-grid">
             <div className="approval-meta-card">
               <div className="approval-meta-label">{t('approval.meta.tool')}</div>
-              <code>{request.tool}</code>
+              <code>{formatApprovalToolLabel(t, request.tool)}</code>
             </div>
             <div className="approval-meta-card">
               <div className="approval-meta-label">{t('approval.meta.category')}</div>
-              <span>{request.category}</span>
+              <span>{formatApprovalCategoryLabel(t, request.category)}</span>
             </div>
             {metadataEntries.map(([key, value]) => (
               <div key={key} className="approval-meta-card">
-                <div className="approval-meta-label">{key}</div>
+                <div className="approval-meta-label">{formatApprovalMetadataLabel(t, key)}</div>
                 <span>{formatValue(value)}</span>
               </div>
             ))}

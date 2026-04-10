@@ -525,13 +525,37 @@ func classifyObservabilityPlane(toolName string) string {
 
 func buildObservabilityMessage(locale string, plane string, toolName string, status string) string {
 	localizer := i18n.MustLocalizer(locale)
+	scopeKey := "server.observability.scope.generic"
+	switch plane {
+	case "trajectory":
+		scopeKey = "server.observability.scope.trajectory"
+	case "memory":
+		scopeKey = "server.observability.scope.memory"
+	case "visual":
+		scopeKey = "server.observability.scope.visual"
+	case "workspace":
+		scopeKey = "server.observability.scope.workspace"
+	}
+	toolKey := "server.observability.tool.generic"
+	switch toolName {
+	case "rollback_to_step":
+		toolKey = "server.observability.tool.rollback_to_step"
+	case "apply_core_edit":
+		toolKey = "server.observability.tool.apply_core_edit"
+	case "edit_preview":
+		toolKey = "server.observability.tool.edit_preview"
+	case "get_validation_states":
+		toolKey = "server.observability.tool.get_validation_states"
+	}
+	scopeLabel := localizer.T(scopeKey)
+	toolLabel := localizer.T(toolKey, toolName)
 	switch status {
 	case "running":
-		return localizer.T("server.observability.running", plane, toolName)
+		return localizer.T("server.observability.running", scopeLabel, toolLabel)
 	case "error":
-		return localizer.T("server.observability.error", plane, toolName)
+		return localizer.T("server.observability.error", scopeLabel, toolLabel)
 	default:
-		return localizer.T("server.observability.completed", plane, toolName)
+		return localizer.T("server.observability.completed", scopeLabel, toolLabel)
 	}
 }
 

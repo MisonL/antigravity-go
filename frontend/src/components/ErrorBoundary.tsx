@@ -5,8 +5,8 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundaryRoot extends React.Component<React.PropsWithChildren<{ resetLabel: string; summary: string; title: string }>, ErrorBoundaryState> {
-  public constructor(props: React.PropsWithChildren<{ resetLabel: string; summary: string; title: string }>) {
+class ErrorBoundaryRoot extends React.Component<React.PropsWithChildren<{ heading: string; resetLabel: string; summary: string; title: string }>, ErrorBoundaryState> {
+  public constructor(props: React.PropsWithChildren<{ heading: string; resetLabel: string; summary: string; title: string }>) {
     super(props);
     this.state = { error: null };
   }
@@ -28,9 +28,9 @@ class ErrorBoundaryRoot extends React.Component<React.PropsWithChildren<{ resetL
       <div className="error-boundary-shell">
         <div className="glass-panel error-boundary-card" role="alert">
           <div className="error-boundary-kicker">{this.props.title}</div>
-          <h1>{this.state.error.name || 'Error'}</h1>
+          <h1>{this.props.heading}</h1>
           <p>{this.props.summary}</p>
-          <pre className="error-boundary-stack">{this.state.error.message}</pre>
+          <pre className="error-boundary-stack">{`${this.state.error.name}: ${this.state.error.message}`}</pre>
           <button
             className="btn-primary"
             type="button"
@@ -52,6 +52,7 @@ export function ErrorBoundary({ children }: React.PropsWithChildren) {
 
   return (
     <ErrorBoundaryRoot
+      heading={t('error_boundary.heading')}
       resetLabel={t('error_boundary.retry')}
       summary={t('error_boundary.summary')}
       title={t('error_boundary.title')}

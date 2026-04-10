@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import { SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
@@ -27,6 +27,16 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
   const currentFileRef = useRef<string | null>(currentFile);
   const isDirtyRef = useRef(false);
   const suppressDirtyOnceRef = useRef(false);
+
+  const formatLoadError = useCallback((error: unknown) => {
+    if (error instanceof Error) {
+      const statusMatch = error.message.match(/\b(\d{3})\b/);
+      if (statusMatch) {
+        return t('codeviewer.error.load_status', statusMatch[1]);
+      }
+    }
+    return t('codeviewer.error.load');
+  }, [t]);
 
   useEffect(() => {
     currentFileRef.current = currentFile;
@@ -83,7 +93,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
         const res = await fetch(`/api/fs/content?path=${encodeURIComponent(requestedFile)}`, {
           signal: controller.signal,
         });
-        if (!res.ok) throw new Error(`Load failed (${res.status})`);
+        if (!res.ok) throw new Error(String(res.status));
         const data = await res.json();
 
         // 防止竞态：请求返回时文件已切换
@@ -112,7 +122,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
 
       } catch (e) {
         if ((e as any)?.name === 'AbortError') return;
-        const message = t('codeviewer.error.load', String(e));
+        const message = formatLoadError(e);
         setCode(message);
         setLoadError(message);
       } finally {
@@ -122,7 +132,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
 
     fetchContent();
     return () => controller.abort();
-  }, [currentFile, lastModified, t]); // Depend on lastModified to re-fetch
+  }, [currentFile, formatLoadError, lastModified, t]); // Depend on lastModified to re-fetch
 
   const handleEditorDidMount = (editor: any, monacoInstance: any) => {
     editorRef.current = editor;
@@ -226,7 +236,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
     fetch(`/api/fs/content?path=${encodeURIComponent(currentFile)}`, {
     })
       .then(async (r) => {
-        if (!r.ok) throw new Error(`Load failed (${r.status})`);
+        if (!r.ok) throw new Error(String(r.status));
         return r.json();
       })
       .then((d) => {
@@ -237,7 +247,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ currentFile, onCodeActio
         isDirtyRef.current = false;
       })
       .catch((error) => {
-        const message = t('codeviewer.error.load', String(error));
+        const message = formatLoadError(error);
         setCode(message);
         setLoadError(message);
       })

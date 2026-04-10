@@ -29,6 +29,7 @@ export function ScoreboardPanel({ error = '', summary }: ScoreboardPanelProps) {
   const currentTask = summary?.current_execution ?? summary?.current_task;
   const recentFailure = summary?.recent_failure;
   const successRate = summary ? `${summary.success_rate.toFixed(0)}%` : '--';
+  const errorLabel = formatScoreboardError(error, t);
 
   return (
     <div className="scoreboard-panel" data-testid="scoreboard-panel">
@@ -70,10 +71,31 @@ export function ScoreboardPanel({ error = '', summary }: ScoreboardPanelProps) {
         ) : (
           <span className="scoreboard-text scoreboard-text-muted">{t('scoreboard.no_recent_failure')}</span>
         )}
-        {error && <span className="scoreboard-text scoreboard-text-error">{error}</span>}
+        {errorLabel && (
+          <span className="scoreboard-text scoreboard-text-error" title={error}>
+            {errorLabel}
+          </span>
+        )}
       </div>
     </div>
   );
+}
+
+function formatScoreboardError(
+  error: string,
+  t: (key: string, ...args: unknown[]) => string,
+): string {
+  const text = error.trim();
+  if (!text) {
+    return '';
+  }
+
+  const statusMatch = text.match(/\b(\d{3})\b/);
+  if (statusMatch) {
+    return t('scoreboard.unavailable_with_status', statusMatch[1]);
+  }
+
+  return t('scoreboard.unavailable');
 }
 
 function taskStatusClass(status: string): string {

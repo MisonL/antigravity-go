@@ -57,6 +57,7 @@ export function useI18n() {
     }
     window.localStorage.setItem(I18N_STORAGE_KEY, locale);
     document.documentElement.lang = locale;
+    document.title = messages[locale]['app.meta.title'] ?? messages['en-US']['app.meta.title'] ?? document.title;
   }, [locale]);
 
   const setLocale = (nextLocale: string) => {

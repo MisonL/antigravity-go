@@ -120,10 +120,20 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
   const [error, setError] = useState<string | null>(null);
   const [loadingPaths, setLoadingPaths] = useState<Record<string, boolean>>({});
 
+  const formatTreeError = useCallback((error: unknown) => {
+    if (error instanceof Error) {
+      const statusMatch = error.message.match(/\b(\d{3})\b/);
+      if (statusMatch) {
+        return t('filetree.error_status', statusMatch[1]);
+      }
+    }
+    return t('filetree.error');
+  }, [t]);
+
   const apiFetchTree = useCallback(async (path: string) => {
     const res = await fetch(`/api/fs/tree?path=${encodeURIComponent(path)}&depth=1`);
     if (!res.ok) {
-      throw new Error(await res.text());
+      throw new Error(String(res.status));
     }
     return (await res.json()) as FileNode;
   }, []);
@@ -151,7 +161,7 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
       const children = dirNode.children ?? [];
       setRoot((prev) => (prev ? setChildrenByPath(prev, path, children) : prev));
     } catch (e) {
-      setError(e instanceof Error && e.message.trim() ? e.message : t('filetree.error'));
+      setError(formatTreeError(e));
     } finally {
       setLoadingPaths((p) => {
         const next = { ...p };
@@ -159,7 +169,7 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
         return next;
       });
     }
-  }, [apiFetchTree, loadingPaths, root, setChildrenByPath, t]);
+  }, [apiFetchTree, formatTreeError, loadingPaths, root, setChildrenByPath]);
 
   useEffect(() => {
     apiFetchTree(".")
@@ -168,10 +178,10 @@ export const FileTree: React.FC<FileTreeProps> = ({ onSelectFile }) => {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err instanceof Error && err.message.trim() ? err.message : t('filetree.error'));
+        setError(formatTreeError(err));
         setLoading(false);
       });
-  }, [apiFetchTree, t]);
+  }, [apiFetchTree, formatTreeError]);
 
   const isLoadingPath = useCallback((path: string) => loadingPaths[path] === true, [loadingPaths]);
 

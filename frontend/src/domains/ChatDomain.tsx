@@ -428,7 +428,7 @@ export function ChatWorkspace({
 
               return (
                 <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}>
-                  <span className="role-icon">{message.role === 'user' ? 'USER' : 'AI'}</span>
+                  <span className="role-icon">{message.role === 'user' ? t('chat.role.user') : t('chat.role.assistant')}</span>
                   <div className="message-content">
                     {message.content}
                     {message.role === 'assistant' && !chat.streamingResponse && (
@@ -445,7 +445,7 @@ export function ChatWorkspace({
 
           {chat.streamingResponse && (
             <div className="chat-message assistant streaming">
-              <span className="role-icon">AI</span>
+              <span className="role-icon">{t('chat.role.assistant')}</span>
               <div className="message-content">{chat.streamingResponse}</div>
             </div>
           )}

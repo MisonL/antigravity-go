@@ -83,6 +83,10 @@ export function McpPanel({ onClose }: McpPanelProps) {
   const [formArgs, setFormArgs] = useState('');
   const [formEnv, setFormEnv] = useState('');
 
+  const formatStatusError = useCallback((response: Response, fallbackKey: string) => {
+    return t(fallbackKey, response.status);
+  }, [t]);
+
   const fetchServers = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -90,7 +94,7 @@ export function McpPanel({ onClose }: McpPanelProps) {
     try {
       const resp = await fetch('/api/mcp');
       if (!resp.ok) {
-        throw new Error(`MCP request failed: ${resp.status}`);
+        throw new Error(formatStatusError(resp, 'mcp.error.fetch_status'));
       }
 
       const data = await resp.json() as McpResponse;
@@ -98,11 +102,11 @@ export function McpPanel({ onClose }: McpPanelProps) {
       setCapabilities(data.capabilities ?? {});
       setWarning(data.warning ?? '');
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : t('mcp.error.fetch'));
+      setError(fetchError instanceof Error && fetchError.message.trim() ? fetchError.message : t('mcp.error.fetch'));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [formatStatusError, t]);
 
   useEffect(() => {
     void fetchServers();
@@ -125,7 +129,7 @@ export function McpPanel({ onClose }: McpPanelProps) {
         }),
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `Save failed: ${resp.status}`);
+        throw new Error((await resp.text()).trim() || formatStatusError(resp, 'mcp.error.save_status'));
       }
 
       setFormName('');
@@ -151,7 +155,7 @@ export function McpPanel({ onClose }: McpPanelProps) {
         body: JSON.stringify({ name }),
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `Delete failed: ${resp.status}`);
+        throw new Error((await resp.text()).trim() || formatStatusError(resp, 'mcp.error.delete_status'));
       }
       await fetchServers();
     } catch (deleteError) {
@@ -172,7 +176,7 @@ export function McpPanel({ onClose }: McpPanelProps) {
         body: JSON.stringify({ action: 'restart', name }),
       });
       if (!resp.ok) {
-        throw new Error(await resp.text() || `Restart failed: ${resp.status}`);
+        throw new Error((await resp.text()).trim() || formatStatusError(resp, 'mcp.error.restart_status'));
       }
       await fetchServers();
     } catch (restartError) {
@@ -216,9 +220,9 @@ export function McpPanel({ onClose }: McpPanelProps) {
             </div>
 
             <div className="mcp-capability-grid">
-              <span className={`badge ${capabilities.add?.supported ? 'success' : 'error'}`}>Add: {capabilities.add?.requested ?? '-'}</span>
-              <span className={`badge ${capabilities.restart?.supported ? 'success' : 'error'}`}>Restart: {capabilities.restart?.requested ?? '-'}</span>
-              <span className={`badge ${capabilities.invoke?.supported ? 'success' : 'error'}`}>Invoke: {capabilities.invoke?.requested ?? '-'}</span>
+              <span className={`badge ${capabilities.add?.supported ? 'success' : 'error'}`}>{t('mcp.capability.add')}: {capabilities.add?.requested ?? '-'}</span>
+              <span className={`badge ${capabilities.restart?.supported ? 'success' : 'error'}`}>{t('mcp.capability.restart')}: {capabilities.restart?.requested ?? '-'}</span>
+              <span className={`badge ${capabilities.invoke?.supported ? 'success' : 'error'}`}>{t('mcp.capability.invoke')}: {capabilities.invoke?.requested ?? '-'}</span>
             </div>
 
             <StateMessage message={warning} />
@@ -238,10 +242,10 @@ export function McpPanel({ onClose }: McpPanelProps) {
                       <div>
                         <div className="mcp-server-card__title">{server.name}</div>
                         <div className="mcp-server-card__meta">
-                          {server.command || t('mcp.command.hidden')} {server.status ? `| ${server.status}` : ''}
+                          {server.command || t('mcp.command.hidden')}{server.status ? ` · ${server.status}` : ''}
                         </div>
                       </div>
-                      <span className="badge info">tools: {server.tool_count}</span>
+                      <span className="badge info">{t('mcp.tools_count', server.tool_count)}</span>
                     </div>
 
                     {server.args && server.args.length > 0 && (
