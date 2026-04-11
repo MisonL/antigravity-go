@@ -74,6 +74,9 @@ func TestProbeCoreCapabilitiesMarksSupportedAndUnsupportedMethods(t *testing.T) 
 		"GetDiagnostics": func(_ map[string]interface{}) (int, interface{}) {
 			return http.StatusBadRequest, "missing path"
 		},
+		"GetUserMemories": func(_ map[string]interface{}) (int, interface{}) {
+			return http.StatusInternalServerError, "deprecated"
+		},
 		"GetCodeFrequencyForRepo": func(_ map[string]interface{}) (int, interface{}) {
 			return http.StatusBadRequest, "repo_uri is required"
 		},
@@ -93,6 +96,9 @@ func TestProbeCoreCapabilitiesMarksSupportedAndUnsupportedMethods(t *testing.T) 
 	}
 	if !caps.Diagnostics.Supported {
 		t.Fatalf("expected diagnostics to be treated as supported on non-404 error: %+v", caps.Diagnostics)
+	}
+	if caps.MemoryQuery.Supported {
+		t.Fatalf("expected deprecated memory query to be treated as unsupported: %+v", caps.MemoryQuery)
 	}
 	if !caps.CodeFrequency.Supported {
 		t.Fatalf("expected code frequency to be treated as supported on non-404 error: %+v", caps.CodeFrequency)

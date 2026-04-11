@@ -7,6 +7,7 @@ import (
 )
 
 var statusCodePattern = regexp.MustCompile(`status (\d+):`)
+var unsupportedMethodPattern = regexp.MustCompile(`\b(method|rpc)\b.*\b(not found|unknown|unimplemented)\b|\b(not found|unknown|unimplemented)\b.*\b(method|rpc)\b`)
 
 type MethodProbe struct {
 	Requested string `json:"requested"`
@@ -40,9 +41,13 @@ func IsUnsupportedMethodError(err error) bool {
 		return true
 	}
 
+	if strings.Contains(msg, "deprecated") {
+		return true
+	}
+
 	return strings.Contains(msg, "unimplemented") ||
 		strings.Contains(msg, "unknown method") ||
-		strings.Contains(msg, "not found")
+		unsupportedMethodPattern.MatchString(msg)
 }
 
 func (c *Client) ProbeMethod(candidates []string, req map[string]interface{}) MethodProbe {
