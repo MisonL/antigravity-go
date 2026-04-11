@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type { ApprovalDecisionInput, ApprovalRequest } from '../components/ApprovalModal';
+import { CodeFrequencyPanel } from '../components/CodeFrequencyPanel';
 import { ScoreboardPanel, type TaskSummaryResponse } from '../components/ScoreboardPanel';
 import { useAppDomain } from './AppDomainContext';
 import {
   buildWebSocketURL,
+  type CodeFrequencyResponse,
   formatCodeActionPrompt,
   normalizeApprovalRequest,
   parseSpecialistToolArgs,
@@ -35,10 +37,15 @@ export interface ChatDomainState {
 
 interface ChatWorkspaceProps {
   chat: ChatDomainState;
+  codeFrequency: CodeFrequencyResponse | null;
+  codeFrequencyError: string;
+  codeFrequencyLoading: boolean;
   memoryCount: number | null;
+  onLoadCodeFrequency: () => void;
   onOpenVisualSelfTest: () => void;
   scoreboardError: string;
   scoreboardSummary: TaskSummaryResponse | null;
+  showCodeFrequency: boolean;
   visualSelfTestSample: VisualSelfTestSample | null;
 }
 
@@ -359,10 +366,15 @@ export function useChatDomain(): ChatDomainState {
 
 export function ChatWorkspace({
   chat,
+  codeFrequency,
+  codeFrequencyError,
+  codeFrequencyLoading,
   memoryCount,
+  onLoadCodeFrequency,
   onOpenVisualSelfTest,
   scoreboardError,
   scoreboardSummary,
+  showCodeFrequency,
   visualSelfTestSample,
 }: ChatWorkspaceProps) {
   const { t } = useAppDomain();
@@ -392,6 +404,16 @@ export function ChatWorkspace({
               <div className="welcome-screen__scoreboard">
                 <ScoreboardPanel error={scoreboardError} summary={scoreboardSummary} />
               </div>
+              {showCodeFrequency && (
+                <div className="welcome-screen__scoreboard">
+                  <CodeFrequencyPanel
+                    error={codeFrequencyError}
+                    loading={codeFrequencyLoading}
+                    onRefresh={onLoadCodeFrequency}
+                    summary={codeFrequency}
+                  />
+                </div>
+              )}
               <h2>{t('chat.hero.title')}</h2>
               <p>{t('chat.hero.subtitle')}</p>
               <div className="suggestion-chips">

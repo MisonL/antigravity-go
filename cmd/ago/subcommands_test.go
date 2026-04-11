@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mison/antigravity-go/internal/corecap"
+	"github.com/mison/antigravity-go/internal/rpc"
 	"github.com/mison/antigravity-go/internal/session"
 )
 
@@ -194,6 +196,126 @@ func TestFilterExecutionRecordsByStatus(t *testing.T) {
 	for _, record := range filtered {
 		if record.Status != session.ExecutionStatusRunning {
 			t.Fatalf("unexpected filtered record: %+v", record)
+		}
+	}
+}
+
+func TestRenderResumeUnsupportedMessageIncludesProbeEvidence(t *testing.T) {
+	output := renderResumeUnsupportedMessage(rpc.MethodProbe{
+		Requested: "GetCascadeTrajectory",
+		Evidence:  "status 404: unknown method",
+	})
+
+	for _, want := range []string{"ago resume", "GetCascadeTrajectory", "doctor"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected resume unsupported output to contain %q, got %q", want, output)
+		}
+	}
+}
+
+func TestRenderMCPCapabilityMessageMarksReadOnlyMode(t *testing.T) {
+	output := renderMCPCapabilityMessage(
+		corecap.DeriveSurfaceCapabilityPolicy(corecap.CoreCapabilities{
+			McpStates: rpc.MethodProbe{Supported: true},
+		}),
+		corecap.CoreCapabilities{
+			McpStates: rpc.MethodProbe{Supported: true},
+		},
+	)
+
+	for _, want := range []string{"MCP 状态", "仅支持查看", "mcp_states: true", "mcp_add: false"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected MCP capability output to contain %q, got %q", want, output)
+		}
+	}
+}
+
+func TestRenderMCPListIncludesServerRows(t *testing.T) {
+	output := renderMCPList([]corecap.McpServerInfo{
+		{
+			Name:      "filesystem",
+			Status:    "running",
+			ToolCount: 2,
+			Command:   "npx",
+		},
+	}, corecap.DeriveSurfaceCapabilityPolicy(corecap.CoreCapabilities{
+		McpStates: rpc.MethodProbe{Supported: true},
+		McpControl: rpc.McpRPCSupport{
+			Refresh: rpc.MethodProbe{Supported: true},
+		},
+	}), corecap.CoreCapabilities{
+		McpStates: rpc.MethodProbe{Supported: true},
+		McpControl: rpc.McpRPCSupport{
+			Refresh: rpc.MethodProbe{Supported: true},
+		},
+	})
+
+	for _, want := range []string{"MCP 服务列表", "filesystem", "tools=2", "command=npx", "mcp_refresh: true"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected MCP list output to contain %q, got %q", want, output)
+		}
+	}
+}
+
+func TestParseMCPCommandArgsListSupportsTrailingJSONFlag(t *testing.T) {
+	parsed, err := parseMCPCommandArgs([]string{"list", "--json"})
+	if err != nil {
+		t.Fatalf("parseMCPCommandArgs returned error: %v", err)
+	}
+	if parsed.Action != "list" {
+		t.Fatalf("unexpected action: %q", parsed.Action)
+	}
+	if !parsed.JSON {
+		t.Fatal("expected JSON flag to be enabled")
+	}
+	if len(parsed.Args) != 0 {
+		t.Fatalf("did not expect positional args: %+v", parsed.Args)
+	}
+}
+
+func TestParseMCPCommandArgsAddPreservesCommandArguments(t *testing.T) {
+	parsed, err := parseMCPCommandArgs([]string{"add", "filesystem", "npx", "--json", "@modelcontextprotocol/server-filesystem"})
+	if err != nil {
+		t.Fatalf("parseMCPCommandArgs returned error: %v", err)
+	}
+	if parsed.Action != "add" {
+		t.Fatalf("unexpected action: %q", parsed.Action)
+	}
+	if parsed.JSON {
+		t.Fatal("did not expect CLI JSON flag when --json belongs to command args")
+	}
+	want := []string{"filesystem", "npx", "--json", "@modelcontextprotocol/server-filesystem"}
+	if strings.Join(parsed.Args, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected add args: got %+v want %+v", parsed.Args, want)
+	}
+}
+
+func TestParseMCPCommandArgsRejectsUnexpectedListArgument(t *testing.T) {
+	_, err := parseMCPCommandArgs([]string{"list", "unexpected"})
+	if err == nil {
+		t.Fatal("expected parseMCPCommandArgs to reject unexpected list argument")
+	}
+	if !strings.Contains(err.Error(), "unexpected") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRenderMCPResourcesIncludesResourceRows(t *testing.T) {
+	output := renderMCPResources("filesystem", []corecap.McpResourceInfo{
+		{
+			URI:         "file:///tmp/project/README.md",
+			Name:        "README",
+			Description: "workspace readme",
+			MimeType:    "text/markdown",
+		},
+	}, "token-1", corecap.CoreCapabilities{
+		McpStates:    rpc.MethodProbe{Supported: true},
+		McpResources: rpc.MethodProbe{Supported: true},
+	})
+
+	for _, want := range []string{"MCP 资源: filesystem", "README", "mime=text/markdown", "next_page_token: token-1", "mcp_resources: true"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected MCP resources output to contain %q, got %q", want, output)
 		}
 	}
 }

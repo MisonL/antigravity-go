@@ -36,6 +36,14 @@ type McpServerInfo struct {
 	Raw       map[string]interface{} `json:"raw,omitempty"`
 }
 
+type McpResourceInfo struct {
+	URI         string                 `json:"uri"`
+	Name        string                 `json:"name,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	MimeType    string                 `json:"mime_type,omitempty"`
+	Raw         map[string]interface{} `json:"raw,omitempty"`
+}
+
 type mcpConfigFile struct {
 	MCPServers map[string]McpServerSpec `json:"mcpServers"`
 }
@@ -208,12 +216,17 @@ func (m *McpManager) ListServers() ([]McpServerInfo, error) {
 		return nil, err
 	}
 
-	specPayload, err := m.client.GetMcpServers()
-	if err != nil {
+	specPayload := map[string]interface{}{}
+	if payload, err := m.client.GetMcpServers(); err == nil {
+		specPayload = payload
+	} else if !rpc.IsUnsupportedMethodError(err) {
 		return nil, err
 	}
-	statePayload, err := m.client.GetMcpServerStates()
-	if err != nil {
+
+	statePayload := map[string]interface{}{}
+	if payload, err := m.client.GetMcpServerStates(); err == nil {
+		statePayload = payload
+	} else if !rpc.IsUnsupportedMethodError(err) {
 		return nil, err
 	}
 
@@ -253,6 +266,34 @@ func (m *McpManager) ListServers() ([]McpServerInfo, error) {
 	return out, nil
 }
 
+func (m *McpManager) ListResources(serverName, pageToken, query string) ([]McpResourceInfo, string, error) {
+	if err := m.requireClient(); err != nil {
+		return nil, "", err
+	}
+
+	req := map[string]interface{}{}
+	if strings.TrimSpace(serverName) != "" {
+		name := strings.TrimSpace(serverName)
+		req["server_id"] = name
+		req["server_name"] = name
+	}
+	if strings.TrimSpace(pageToken) != "" {
+		req["page_token"] = strings.TrimSpace(pageToken)
+	}
+	if strings.TrimSpace(query) != "" {
+		req["query"] = strings.TrimSpace(query)
+	}
+
+	payload, err := m.client.ListMcpResources(req)
+	if err != nil {
+		return nil, "", err
+	}
+
+	resources := extractResources(payload)
+	nextPageToken := firstNonEmptyString(payload, "next_page_token", "nextPageToken", "page_token")
+	return resources, nextPageToken, nil
+}
+
 func (m *McpManager) currentConfig() (mcpConfigFile, error) {
 	cfg := mcpConfigFile{MCPServers: map[string]McpServerSpec{}}
 
@@ -267,6 +308,8 @@ func (m *McpManager) currentConfig() (mcpConfigFile, error) {
 				return cfg, nil
 			}
 		}
+	} else if err != nil && !rpc.IsUnsupportedMethodError(err) {
+		return cfg, err
 	}
 
 	servers, err := m.ListServers()
@@ -386,6 +429,40 @@ func extractTools(value interface{}) []McpToolInfo {
 	}
 	walk(value)
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func extractResources(value interface{}) []McpResourceInfo {
+	seen := map[string]bool{}
+	out := []McpResourceInfo{}
+	var walk func(interface{})
+	walk = func(v interface{}) {
+		switch typed := v.(type) {
+		case map[string]interface{}:
+			uri := pickString(typed, "uri", "resource_uri", "resourceUri")
+			if uri != "" && !seen[uri] {
+				seen[uri] = true
+				out = append(out, McpResourceInfo{
+					URI:         uri,
+					Name:        pickString(typed, "name", "title", "resource_name", "resourceName"),
+					Description: pickString(typed, "description", "summary"),
+					MimeType:    pickString(typed, "mime_type", "mimeType"),
+					Raw:         typed,
+				})
+			}
+			for _, child := range typed {
+				walk(child)
+			}
+		case []interface{}:
+			for _, child := range typed {
+				walk(child)
+			}
+		}
+	}
+	walk(value)
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].URI < out[j].URI
+	})
 	return out
 }
 

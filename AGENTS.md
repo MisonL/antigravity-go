@@ -1,37 +1,34 @@
 # 仓库指南
 
-## 项目结构与模块组织
-- `cmd/ago/`：CLI 入口、工作流命令与脚手架逻辑。
-- `internal/`：后端核心模块，包含 `agent`、`server`、`llm`、`core`、`tools`、`rpc`、`session` 等。
-- `frontend/src/`：React + TypeScript Web 界面；构建产物会复制到 `internal/server/dist/` 供 Go 服务嵌入。
-- `docs/`：产品设计、技术手册、阶段计划与复核记录。
-- `scripts/`：内核提取、更新与维护脚本。
-- `frontend/dist/` 与 `internal/server/dist/` 均为构建产物，禁止手工修改。
+## 项目结构
+- `cmd/ago/`：CLI 入口、`doctor`/`mcp`/`resume` 等子命令，以及工作流编排。
+- `internal/`：核心后端代码。重点目录包括 `core/`（内核宿主）、`rpc/`（Connect RPC 适配）、`server/`（Web API 与嵌入前端）、`tools/`（Agent 工具）、`corecap/`（内核能力门控）、`tui/`、`session/`。
+- `frontend/src/`：React + TypeScript WebUI；测试放在同级 `*.test.ts(x)` 与 `src/test/`。
+- `internal/server/dist/`、`frontend/dist/`：前端构建产物，只能由构建流程生成。
+- `docs/`：设计文档、计划与复核记录；发布相关事实以 `CHANGELOG.md` 为准。
 
 ## 构建、测试与开发命令
-- `make update-core`：提取或更新 `antigravity_core`，并刷新版本元数据。
-- `make build`：先构建前端，再编译后端二进制 `ago`。
-- `make run`：以本地 Web 模式运行（`./ago --web --no-tui`）。
+- `make build`：安装前端依赖、构建前端、同步 `internal/server/dist`，再编译 `ago`。
+- `make run`：本地启动 Web 模式，等价于 `./ago --web --no-tui`。
+- `make update-core`：用脚本更新仓库内 `antigravity_core`。
 - `go test ./...`：执行全部 Go 测试。
 - `go vet ./...`：执行 Go 静态检查。
-- `cd frontend && bun install && bun run dev`：启动前端开发服务器。
-- `cd frontend && bun run lint && bun run build`：执行前端检查并生成生产构建。
+- `cd frontend && bun run test`：执行 Vitest。
+- `cd frontend && bun run lint && bun run build`：执行 ESLint、TypeScript 与 Vite 构建。
 
-## 代码风格与命名约定
-- Go 目标版本为 `1.24`，提交前统一执行 `gofmt -w`。
-- Go 包名使用小写；导出符号使用 `PascalCase`，内部辅助函数使用 `camelCase`。
-- React 组件文件使用 `PascalCase`，例如 `TerminalPanel.tsx`；Hook 统一使用 `useXxx` 命名。
-- 核心流程必须显式暴露错误，禁止静默回退或伪造成功路径。
-- 遵循 `.gitignore`，不要提交日志、缓存、临时截图或本地调试残留。
+## 代码风格与命名
+- Go 版本为 `1.24`；提交前执行 `gofmt -w`。
+- Go 导出符号用 `PascalCase`，内部函数用 `camelCase`，包名保持短小写。
+- React 组件文件使用 `PascalCase.tsx`，Hook 使用 `useXxx`。
+- 禁止静默降级、假成功路径和硬编码密钥；错误必须显式返回或展示。
+- 不手改 `dist/`、日志、缓存、临时二进制。
 
-## 测试要求
-- Go 测试文件使用 `*_test.go` 并与对应包同目录放置。
-- 开发阶段优先执行最小相关验证，例如 `go test ./internal/server -run TestTasks`，提交前必须补跑 `go test ./...`。
-- 前端相关改动至少通过 `bun run lint` 与 `bun run build`。
-- 行为变更必须同步补测试或更新复核记录，不能只靠人工判断。
+## 测试与验证
+- 后端改动至少跑最小相关测试，提交前必须跑 `go test ./...`、`go vet ./...`。
+- 前端改动至少跑 `bun run test`、`bun run lint`、`bun run build`。
+- 涉及 WebUI 的改动，需要确认内嵌产物已通过 `make build` 同步到 `internal/server/dist/`。
 
-## 提交与合并要求
-- 提交信息遵循当前仓库历史风格：`feat(...)`、`fix(...)`、`refactor(...)`、`docs:`、`chore:`。
-- 每个提交只承载一个清晰变更主题，必要时补 scope，例如 `feat(server): ...`。
-- 合并请求需说明改动目的、涉及路径、验证命令与结果；前端改动需附界面截图或等效证据。
-- 若存在破坏性变更、版本升级或核心兼容性调整，必须在描述中显式说明。
+## 提交与合并
+- 提交风格遵循现有历史：`feat(...)`、`fix(...)`、`refactor(...)`、`docs:`、`chore:`、`release:`、`ci:`。
+- 一个提交只做一个清晰主题；不要把无关修复混入同一提交。
+- PR 或交付说明应包含：变更目的、影响路径、验证命令、结果；界面改动补截图或等效运行证据。

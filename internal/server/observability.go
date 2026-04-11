@@ -22,6 +22,13 @@ type observabilitySummary struct {
 	GeneratedAt  string        `json:"generated_at"`
 }
 
+type codeFrequencyResponse struct {
+	WorkspaceRoot string                        `json:"workspace_root"`
+	RepoURI       string                        `json:"repo_uri"`
+	GeneratedAt   string                        `json:"generated_at"`
+	CodeFrequency []corecap.CodeFrequencyBucket `json:"code_frequency"`
+}
+
 type rollbackStepRequest struct {
 	StepID string `json:"step_id"`
 }
@@ -75,6 +82,30 @@ func (s *Server) handleObservabilitySummary(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, summary)
 }
 
+func (s *Server) handleObservabilityCodeFrequency(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if s.client == nil {
+		http.Error(w, "core rpc client is not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	buckets, repoURI, err := corecap.NewObservabilityManager(s.client).GetCodeFrequency(s.workspaceRoot)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, codeFrequencyResponse{
+		WorkspaceRoot: s.workspaceRoot,
+		RepoURI:       repoURI,
+		GeneratedAt:   time.Now().Format(time.RFC3339),
+		CodeFrequency: buckets,
+	})
+}
+
 func (s *Server) handleRollbackStep(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -116,29 +147,72 @@ func (s *Server) handleVisualSelfTestSample(w http.ResponseWriter, r *http.Reque
 
 	targetURL := buildDashboardURL(r)
 	localizer := i18n.MustLocalizer(s.defaultLocale())
+	policy := corecap.DeriveSurfaceCapabilityPolicy(corecap.ProbeCoreCapabilities(s.client))
+
 	taskLines := []string{
 		localizer.T("server.visual_test.task.intro"),
-		localizer.T("server.visual_test.task.open", targetURL),
-		localizer.T("server.visual_test.task.click"),
-		`   - [data-testid="open-trajectory"]`,
-		`   - [data-testid="open-memory"]`,
-		`   - [data-testid="open-visual-self-test"]`,
-		localizer.T("server.visual_test.task.verify"),
-		`   - [data-testid="trajectory-modal"]`,
-		`   - [data-testid="trajectory-list"]`,
-		`   - [data-testid="trajectory-detail"]`,
-		localizer.T("server.visual_test.task.report"),
+		"- " + localizer.T("server.visual_test.task.open", targetURL),
 	}
-
 	checklist := []map[string]string{
 		{"label": localizer.T("server.visual_test.label.header"), "selector": `[data-testid="dashboard-header"]`},
-		{"label": localizer.T("server.visual_test.label.trajectory_button"), "selector": `[data-testid="open-trajectory"]`},
-		{"label": localizer.T("server.visual_test.label.memory_button"), "selector": `[data-testid="open-memory"]`},
 		{"label": localizer.T("server.visual_test.label.visual_button"), "selector": `[data-testid="open-visual-self-test"]`},
-		{"label": localizer.T("server.visual_test.label.trajectory_modal"), "selector": `[data-testid="trajectory-modal"]`},
-		{"label": localizer.T("server.visual_test.label.trajectory_list"), "selector": `[data-testid="trajectory-list"]`},
-		{"label": localizer.T("server.visual_test.label.trajectory_detail"), "selector": `[data-testid="trajectory-detail"]`},
 	}
+
+	clickTargets := []string{`[data-testid="open-visual-self-test"]`}
+	verifyTargets := []map[string]string{}
+
+	if policy.Trajectory.ShowList {
+		clickTargets = append(clickTargets, `[data-testid="open-trajectory"]`)
+		checklist = append(checklist, map[string]string{
+			"label":    localizer.T("server.visual_test.label.trajectory_button"),
+			"selector": `[data-testid="open-trajectory"]`,
+		})
+		verifyTargets = append(verifyTargets,
+			map[string]string{"label": localizer.T("server.visual_test.label.trajectory_modal"), "selector": `[data-testid="trajectory-modal"]`},
+			map[string]string{"label": localizer.T("server.visual_test.label.trajectory_list"), "selector": `[data-testid="trajectory-list"]`},
+		)
+		if policy.Trajectory.ShowDetail {
+			verifyTargets = append(verifyTargets, map[string]string{
+				"label":    localizer.T("server.visual_test.label.trajectory_detail"),
+				"selector": `[data-testid="trajectory-detail"]`,
+			})
+		}
+	}
+
+	if policy.Memory.ShowQuery {
+		clickTargets = append(clickTargets, `[data-testid="open-memory"]`)
+		checklist = append(checklist, map[string]string{
+			"label":    localizer.T("server.visual_test.label.memory_button"),
+			"selector": `[data-testid="open-memory"]`,
+		})
+	}
+
+	if policy.MCP.Show {
+		clickTargets = append(clickTargets, `[data-testid="open-mcp"]`)
+		checklist = append(checklist, map[string]string{
+			"label":    localizer.T("server.visual_test.label.mcp_button"),
+			"selector": `[data-testid="open-mcp"]`,
+		})
+		verifyTargets = append(verifyTargets,
+			map[string]string{"label": localizer.T("server.visual_test.label.mcp_modal"), "selector": `[data-testid="mcp-modal"]`},
+			map[string]string{"label": localizer.T("server.visual_test.label.mcp_list"), "selector": `[data-testid="mcp-list"]`},
+		)
+	}
+
+	if len(clickTargets) > 0 {
+		taskLines = append(taskLines, "- "+localizer.T("server.visual_test.task.click"))
+		for _, selector := range clickTargets {
+			taskLines = append(taskLines, "  - "+selector)
+		}
+	}
+	if len(verifyTargets) > 0 {
+		taskLines = append(taskLines, "- "+localizer.T("server.visual_test.task.verify"))
+		for _, item := range verifyTargets {
+			taskLines = append(taskLines, "  - "+item["selector"])
+		}
+		checklist = append(checklist, verifyTargets...)
+	}
+	taskLines = append(taskLines, "- "+localizer.T("server.visual_test.task.report"))
 
 	writeJSON(w, map[string]interface{}{
 		"title":     localizer.T("server.visual_test.title"),

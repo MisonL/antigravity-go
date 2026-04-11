@@ -130,13 +130,16 @@ func (s *Server) Start() error {
 
 	// API Routes
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/core/capabilities", s.handleCoreCapabilities)
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/history", s.handleHistory)
 	mux.HandleFunc("/api/trajectories", s.handleTrajectories)
 	mux.HandleFunc("/api/trajectories/", s.handleTrajectoryDetail)
 	mux.HandleFunc("/api/memories", s.handleMemories)
 	mux.HandleFunc("/api/mcp", s.handleMCP)
+	mux.HandleFunc("/api/mcp/resources", s.handleMCPResources)
 	mux.HandleFunc("/api/observability/summary", s.handleObservabilitySummary)
+	mux.HandleFunc("/api/observability/code-frequency", s.handleObservabilityCodeFrequency)
 	mux.HandleFunc("/api/executions/summary", s.handleExecutionsSummary)
 	mux.HandleFunc("/api/executions/", s.handleExecutionResource)
 	mux.HandleFunc("/api/tasks", s.handleTasks)

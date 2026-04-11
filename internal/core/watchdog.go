@@ -55,13 +55,10 @@ func (h *Host) startProcess() error {
 		logFile.Close()
 		return fmt.Errorf("start core: %w", err)
 	}
-	if err := logFile.Close(); err != nil {
-		return fmt.Errorf("close log file handle: %w", err)
-	}
 
 	done := make(chan struct{})
 	go h.tailLogs(logPath, done)
-	go h.waitForProcessExit(cmd, generation, done)
+	go h.waitForProcessExit(cmd, generation, done, logFile)
 
 	h.mu.Lock()
 	h.cmd = cmd
@@ -72,10 +69,12 @@ func (h *Host) startProcess() error {
 	metadata := generateMetadata()
 	if _, err := stdin.Write(metadata); err != nil {
 		_ = stopProcess(cmd, done)
+		_ = logFile.Close()
 		return fmt.Errorf("write metadata: %w", err)
 	}
 	if err := stdin.Close(); err != nil {
 		_ = stopProcess(cmd, done)
+		_ = logFile.Close()
 		return fmt.Errorf("close metadata pipe: %w", err)
 	}
 
@@ -214,13 +213,16 @@ func (h *Host) stopCurrentProcess() error {
 	return stopProcess(cmd, done)
 }
 
-func (h *Host) waitForProcessExit(cmd *exec.Cmd, generation uint64, done chan struct{}) {
+func (h *Host) waitForProcessExit(cmd *exec.Cmd, generation uint64, done chan struct{}, logFile *os.File) {
 	err := cmd.Wait()
 	close(done)
 
 	h.mu.Lock()
 	if h.generation != generation {
 		h.mu.Unlock()
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		return
 	}
 	h.processExited = true
@@ -233,12 +235,18 @@ func (h *Host) waitForProcessExit(cmd *exec.Cmd, generation uint64, done chan st
 			h.logs = h.logs[len(h.logs)-1000:]
 		}
 		h.mu.Unlock()
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		if onLog != nil {
 			onLog(line)
 		}
 		return
 	}
 	h.mu.Unlock()
+	if logFile != nil {
+		_ = logFile.Close()
+	}
 }
 
 func (h *Host) resetRuntimeLocked() {

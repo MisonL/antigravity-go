@@ -14,6 +14,7 @@ import (
 	"github.com/mison/antigravity-go/internal/agent"
 	"github.com/mison/antigravity-go/internal/config"
 	"github.com/mison/antigravity-go/internal/core"
+	"github.com/mison/antigravity-go/internal/corecap"
 	"github.com/mison/antigravity-go/internal/llm"
 	"github.com/mison/antigravity-go/internal/rpc"
 	"github.com/mison/antigravity-go/internal/tools"
@@ -208,9 +209,10 @@ func (rt *commandRuntime) newReviewAgent() *agent.Agent {
 	reviewAgt.RegisterTool(rt.lspMgr.GetDiagnosticsTool())
 
 	coreV2 := tools.NewCoreV2Manager(rt.client)
-	reviewAgt.RegisterTool(coreV2.GetRepoInfosTool())
-	reviewAgt.RegisterTool(coreV2.GetCoreDiagnosticsTool())
-	reviewAgt.RegisterTool(coreV2.GetValidationStatesTool())
+	coreCaps := corecap.ProbeCoreCapabilities(rt.client)
+	for _, tool := range coreV2.AvailableTools(coreCaps, tools.CoreToolModeReview) {
+		reviewAgt.RegisterTool(tool)
+	}
 	reviewAgt.RegisterTool(reviewAgt.GetSpecialistTool())
 	reviewAgt.SetSystemPrompt(`你是 CLI 的 ReviewerAgent，只能做静态代码审查。
 必须先收集证据，再输出结论。

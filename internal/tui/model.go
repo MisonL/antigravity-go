@@ -522,7 +522,7 @@ func (m *Model) handleSlashCommand(cmd string) tea.Cmd {
 	// Legacy handling or fuzzy fallback
 	switch cmdName {
 	case "/status": // Keep legacy if not in registry (though added above)
-		m.addMessage(m.t("tui.command.status.summary", m.host.IsReady()))
+		m.addMessage(m.statusMarkdown())
 		return nil
 	case "/approvals":
 		// ... logic from before (move to registry later for cleaner code) ...

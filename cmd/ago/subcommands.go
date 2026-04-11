@@ -79,12 +79,17 @@ func runDoctor(args []string) {
 					fmt.Printf("  - WARN 停止内核失败: %v\n", err)
 				}
 			}()
-			fmt.Print("  - WAIT 等待内核就绪...")
-			if err := host.WaitReady(30 * time.Second); err != nil {
-				fmt.Printf("\r  - FAIL 内核未在 30 秒内就绪: %v\n", err)
+			fmt.Print("  - WAIT 等待内核端口...")
+			if err := host.WaitForPort(10 * time.Second); err != nil {
+				fmt.Printf("\r  - FAIL 内核端口未在 10 秒内就绪: %v\n", err)
+				printRecentCoreLogs(host)
+			} else if err := host.WaitReady(30 * time.Second); err != nil {
+				fmt.Printf("\r  - FAIL 内核未在 30 秒内完成 RPC 就绪: %v\n", err)
+				printRecentCoreLogs(host)
 			} else {
 				fmt.Printf("\r  - OK 内核就绪 (HTTP:%d, LSP:%d)\n", host.HTTPPort(), host.LSPPort())
 				client := rpc.NewClient(host.HTTPPort())
+				printCoreCapabilityMatrix(corecap.ProbeCoreCapabilities(client))
 				if status, err := client.GetStaticExperimentStatus(); err == nil {
 					fmt.Println("\n[CORE] 实验性功能状态:")
 					for _, exp := range status.Experiments {
@@ -162,6 +167,7 @@ func runOnce(args []string) {
 
 	if err := host.WaitReady(30 * time.Second); err != nil {
 		fmt.Printf("Timeout: %v\n", err)
+		printRecentCoreLogs(host)
 		return
 	}
 
@@ -251,10 +257,16 @@ func runResume(args []string) {
 
 	if err := host.WaitReady(30 * time.Second); err != nil {
 		fmt.Printf("Timeout: %v\n", err)
+		printRecentCoreLogs(host)
 		return
 	}
 
 	rpcClient := rpc.NewClient(host.HTTPPort())
+	caps := corecap.ProbeCoreCapabilities(rpcClient)
+	if !caps.TrajectoryGet.Supported {
+		fmt.Print(renderResumeUnsupportedMessage(caps.TrajectoryGet))
+		return
+	}
 	snapshot, err := session.LoadTrajectorySnapshot(trajectoryID, corecap.NewTrajectoryManager(rpcClient), cwd)
 	if err != nil {
 		fmt.Printf("恢复轨迹失败: %v\n", err)
@@ -445,7 +457,210 @@ func runExecution(args []string) {
 	fmt.Print(renderExecutionDetail(record, steps, timeline))
 }
 
-func runMCP(args []string) { fmt.Println("MCP command: use 'ago mcp list' to see states.") }
+func runMCP(args []string) {
+	parsed, err := parseMCPCommandArgs(args)
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		fmt.Println("用法: ago mcp [list|add|delete|restart|resources] [--json]")
+		return
+	}
+
+	action := parsed.Action
+
+	cfg, err := config.Load()
+	if err != nil || cfg == nil {
+		cfg = config.DefaultConfig()
+		if err != nil {
+			fmt.Printf("[WARN] 读取配置失败: %v\n", err)
+		}
+	}
+
+	bin, err := resolveCoreBinary(cfg)
+	if err != nil {
+		fmt.Printf("无法定位 antigravity_core: %v\n", err)
+		return
+	}
+
+	host := core.NewHost(core.Config{BinPath: bin, DataDir: cfg.DataDir})
+	if err := host.Start(); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	defer func() {
+		if err := host.Stop(); err != nil {
+			fmt.Printf("WARN: 停止内核失败: %v\n", err)
+		}
+	}()
+
+	if err := host.WaitReady(30 * time.Second); err != nil {
+		fmt.Printf("Timeout: %v\n", err)
+		printRecentCoreLogs(host)
+		return
+	}
+
+	client := rpc.NewClient(host.HTTPPort())
+	manager := corecap.NewMcpManager(client)
+	caps := corecap.ProbeCoreCapabilities(client)
+
+	switch action {
+	case "", "list", "ls", "status":
+		servers, err := manager.ListServers()
+		if err != nil {
+			fmt.Printf("读取 MCP 服务失败: %v\n", err)
+			return
+		}
+		if parsed.JSON {
+			payload := map[string]interface{}{
+				"capabilities": caps,
+				"servers":      servers,
+			}
+			data, err := json.MarshalIndent(payload, "", "  ")
+			if err != nil {
+				fmt.Printf("渲染 MCP JSON 失败: %v\n", err)
+				return
+			}
+			fmt.Println(string(data))
+			return
+		}
+		fmt.Print(renderMCPList(servers, corecap.DeriveSurfaceCapabilityPolicy(caps), caps))
+	case "add", "upsert":
+		if len(parsed.Args) < 2 {
+			fmt.Println("用法: ago mcp add <name> <command> [args...]")
+			return
+		}
+		resp, err := manager.UpsertServer(corecap.McpServerSpec{
+			Name:    parsed.Args[0],
+			Command: parsed.Args[1],
+			Args:    append([]string(nil), parsed.Args[2:]...),
+		})
+		if err != nil {
+			fmt.Printf("新增或更新 MCP 服务失败: %v\n", err)
+			return
+		}
+		fmt.Print(renderMCPActionResult("add", parsed.Args[0], resp, parsed.JSON))
+	case "delete", "rm":
+		if len(parsed.Args) != 1 {
+			fmt.Println("用法: ago mcp delete <name>")
+			return
+		}
+		resp, err := manager.DeleteServer(parsed.Args[0])
+		if err != nil {
+			fmt.Printf("删除 MCP 服务失败: %v\n", err)
+			return
+		}
+		fmt.Print(renderMCPActionResult("delete", parsed.Args[0], resp, parsed.JSON))
+	case "restart":
+		if len(parsed.Args) != 1 {
+			fmt.Println("用法: ago mcp restart <name>")
+			return
+		}
+		resp, err := manager.RestartServer(parsed.Args[0])
+		if err != nil {
+			fmt.Printf("重启 MCP 服务失败: %v\n", err)
+			return
+		}
+		fmt.Print(renderMCPActionResult("restart", parsed.Args[0], resp, parsed.JSON))
+	case "resources":
+		if len(parsed.Args) != 1 {
+			fmt.Println("用法: ago mcp resources <name>")
+			return
+		}
+		resources, nextPageToken, err := manager.ListResources(parsed.Args[0], "", "")
+		if err != nil {
+			fmt.Printf("读取 MCP 资源失败: %v\n", err)
+			return
+		}
+		if parsed.JSON {
+			data, err := json.MarshalIndent(map[string]interface{}{
+				"server":          parsed.Args[0],
+				"resources":       resources,
+				"next_page_token": nextPageToken,
+				"capabilities":    caps,
+			}, "", "  ")
+			if err != nil {
+				fmt.Printf("渲染 MCP 资源 JSON 失败: %v\n", err)
+				return
+			}
+			fmt.Println(string(data))
+			return
+		}
+		fmt.Print(renderMCPResources(parsed.Args[0], resources, nextPageToken, caps))
+	default:
+		fmt.Println("用法: ago mcp [list|add|delete|restart|resources] [--json]")
+	}
+}
+
+type mcpCommandArgs struct {
+	Action string
+	Args   []string
+	JSON   bool
+}
+
+func parseMCPCommandArgs(args []string) (mcpCommandArgs, error) {
+	parsed := mcpCommandArgs{Action: "list"}
+	remaining := consumeLeadingMCPFlags(args, &parsed)
+
+	if len(remaining) == 0 {
+		return parsed, nil
+	}
+
+	action := strings.ToLower(strings.TrimSpace(remaining[0]))
+	if action == "" {
+		return parsed, nil
+	}
+
+	if strings.HasPrefix(action, "-") {
+		return mcpCommandArgs{}, fmt.Errorf("未知参数: %s", remaining[0])
+	}
+
+	parsed.Action = action
+	rest := remaining[1:]
+
+	switch action {
+	case "", "list", "ls", "status":
+		for _, arg := range rest {
+			if isMCPJSONFlag(arg) {
+				parsed.JSON = true
+				continue
+			}
+			return mcpCommandArgs{}, fmt.Errorf("未知参数: %s", arg)
+		}
+	case "delete", "rm", "restart", "resources":
+		for _, arg := range rest {
+			if isMCPJSONFlag(arg) {
+				parsed.JSON = true
+				continue
+			}
+			parsed.Args = append(parsed.Args, arg)
+		}
+	case "add", "upsert":
+		rest = consumeLeadingMCPFlags(rest, &parsed)
+		parsed.Args = append(parsed.Args, rest...)
+	default:
+		parsed.Args = append(parsed.Args, rest...)
+	}
+
+	return parsed, nil
+}
+
+func consumeLeadingMCPFlags(args []string, parsed *mcpCommandArgs) []string {
+	index := 0
+	for index < len(args) {
+		if !isMCPJSONFlag(args[index]) {
+			break
+		}
+		if parsed != nil {
+			parsed.JSON = true
+		}
+		index++
+	}
+	return append([]string(nil), args[index:]...)
+}
+
+func isMCPJSONFlag(arg string) bool {
+	return strings.TrimSpace(arg) == "--json"
+}
+
 func runModels(args []string) {
 	fmt.Println("Models command: use 'ago models --provider iflow' to see list.")
 }
@@ -484,6 +699,105 @@ func renderExecutionSummary(records []session.ExecutionRecord, limit int) string
 		sb.WriteString(fmt.Sprintf("\n还有 %d 条未展示。\n", len(records)-limit))
 	}
 
+	return sb.String()
+}
+
+func renderResumeUnsupportedMessage(probe rpc.MethodProbe) string {
+	return fmt.Sprintf(
+		"当前内核不支持 ago resume：trajectory_get 未提供（%s）。请先运行 `ago doctor` 核对能力矩阵。\n",
+		firstNonEmptyString(probe.Requested, probe.Evidence, "trajectory_get"),
+	)
+}
+
+func renderMCPCapabilityMessage(policy corecap.SurfaceCapabilityPolicy, caps corecap.CoreCapabilities) string {
+	var sb strings.Builder
+	sb.WriteString("MCP 状态\n")
+	if !policy.MCP.Show {
+		sb.WriteString("当前内核未暴露可用的 MCP 能力。请先运行 `ago doctor` 核对能力矩阵。\n")
+		return sb.String()
+	}
+
+	if policy.MCP.ReadOnly {
+		sb.WriteString("当前内核仅支持查看 MCP 服务状态或资源，不支持新增、删除、重启或调用工具。\n")
+	} else {
+		sb.WriteString("当前内核已暴露 MCP 管理能力。\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("- mcp_states: %t\n", caps.McpStates.Supported))
+	sb.WriteString(fmt.Sprintf("- mcp_servers: %t\n", caps.McpServers.Supported))
+	sb.WriteString(fmt.Sprintf("- mcp_resources: %t\n", caps.McpResources.Supported))
+	sb.WriteString(fmt.Sprintf("- mcp_add: %t\n", caps.McpControl.Add.Supported))
+	sb.WriteString(fmt.Sprintf("- mcp_refresh: %t\n", caps.McpControl.Refresh.Supported))
+	sb.WriteString(fmt.Sprintf("- mcp_restart: %t\n", caps.McpControl.Restart.Supported))
+	sb.WriteString(fmt.Sprintf("- mcp_invoke: %t\n", caps.McpControl.Invoke.Supported))
+	return sb.String()
+}
+
+func renderMCPList(servers []corecap.McpServerInfo, policy corecap.SurfaceCapabilityPolicy, caps corecap.CoreCapabilities) string {
+	var sb strings.Builder
+	sb.WriteString(renderMCPCapabilityMessage(policy, caps))
+	sb.WriteString("\n")
+	if len(servers) == 0 {
+		sb.WriteString("当前没有 MCP 服务。\n")
+		return sb.String()
+	}
+
+	sb.WriteString("MCP 服务列表\n")
+	for _, server := range servers {
+		sb.WriteString(fmt.Sprintf("- %s | %s | tools=%d", server.Name, firstNonEmptyString(server.Status, "unknown"), server.ToolCount))
+		if server.Command != "" {
+			sb.WriteString(fmt.Sprintf(" | command=%s", server.Command))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+func renderMCPActionResult(action string, name string, resp map[string]interface{}, asJSON bool) string {
+	if asJSON {
+		data, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			return fmt.Sprintf("渲染 JSON 失败: %v\n", err)
+		}
+		return string(data) + "\n"
+	}
+
+	mode := ""
+	if rawMode, ok := resp["operation_mode"].(string); ok {
+		mode = rawMode
+	}
+	if mode != "" {
+		return fmt.Sprintf("MCP %s 完成: %s（mode=%s）\n", action, strings.TrimSpace(name), mode)
+	}
+	return fmt.Sprintf("MCP %s 完成: %s\n", action, strings.TrimSpace(name))
+}
+
+func renderMCPResources(serverName string, resources []corecap.McpResourceInfo, nextPageToken string, caps corecap.CoreCapabilities) string {
+	var sb strings.Builder
+	sb.WriteString(renderMCPCapabilityMessage(corecap.DeriveSurfaceCapabilityPolicy(caps), caps))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("MCP 资源: %s\n", strings.TrimSpace(serverName)))
+	if len(resources) == 0 {
+		sb.WriteString("当前没有可枚举的 MCP 资源。\n")
+	} else {
+		for _, resource := range resources {
+			label := firstNonEmptyString(resource.Name, resource.URI)
+			sb.WriteString(fmt.Sprintf("- %s", label))
+			if resource.URI != "" && resource.URI != label {
+				sb.WriteString(fmt.Sprintf(" | uri=%s", resource.URI))
+			}
+			if resource.MimeType != "" {
+				sb.WriteString(fmt.Sprintf(" | mime=%s", resource.MimeType))
+			}
+			if resource.Description != "" {
+				sb.WriteString(fmt.Sprintf(" | %s", resource.Description))
+			}
+			sb.WriteString("\n")
+		}
+	}
+	if nextPageToken != "" {
+		sb.WriteString(fmt.Sprintf("next_page_token: %s\n", nextPageToken))
+	}
 	return sb.String()
 }
 
@@ -678,27 +992,9 @@ func buildBaseAgent(cfg *config.Config, provider llm.Provider, host *core.Host, 
 	baseAgt.RegisterTool(baseAgt.GetParallelWorkerTool())
 
 	coreV2 := tools.NewCoreV2Manager(rpcClient)
-	baseAgt.RegisterTool(coreV2.GetMcpStatesTool())
-	baseAgt.RegisterTool(coreV2.ApplyCoreEditTool())
-	baseAgt.RegisterTool(coreV2.EditPreviewTool())
-	baseAgt.RegisterTool(coreV2.CaptureScreenshotTool())
-	baseAgt.RegisterTool(coreV2.BrowserFocusTool())
-	baseAgt.RegisterTool(coreV2.GetRepoInfosTool())
-	baseAgt.RegisterTool(coreV2.GetCoreDiagnosticsTool())
-	baseAgt.RegisterTool(coreV2.GetValidationStatesTool())
-	baseAgt.RegisterTool(coreV2.BrowserOpenTool())
-	baseAgt.RegisterTool(coreV2.BrowserListTool())
-	baseAgt.RegisterTool(coreV2.BrowserClickTool())
-	baseAgt.RegisterTool(coreV2.BrowserTypeTool())
-	baseAgt.RegisterTool(coreV2.BrowserScrollTool())
-	baseAgt.RegisterTool(coreV2.MemorySaveTool())
-	baseAgt.RegisterTool(coreV2.MemoryQueryTool())
-	baseAgt.RegisterTool(coreV2.TrajectoryListTool())
-	baseAgt.RegisterTool(coreV2.TrajectoryGetTool())
-	baseAgt.RegisterTool(coreV2.TrajectoryExportTool())
-	baseAgt.RegisterTool(coreV2.CommitMessageGenerateTool())
-	baseAgt.RegisterTool(coreV2.RollbackToStepTool())
-	baseAgt.RegisterTool(coreV2.WorkspaceTrackTool())
+	for _, tool := range coreV2.AvailableTools(corecap.ProbeCoreCapabilities(rpcClient), tools.CoreToolModeBase) {
+		baseAgt.RegisterTool(tool)
+	}
 
 	baseAgt.SetLocalizedSystemPrompt("default")
 	return baseAgt
@@ -718,4 +1014,112 @@ func mustAbs(p string) string {
 		return p
 	}
 	return abs
+}
+
+func printCoreCapabilityMatrix(caps corecap.CoreCapabilities) {
+	sections := []struct {
+		title string
+		items []struct {
+			name  string
+			probe rpc.MethodProbe
+		}
+	}{
+		{
+			title: "基础平面",
+			items: []struct {
+				name  string
+				probe rpc.MethodProbe
+			}{
+				{name: "heartbeat", probe: caps.Heartbeat},
+				{name: "run_command", probe: caps.RunCommand},
+				{name: "repo_info", probe: caps.RepoInfo},
+				{name: "rules", probe: caps.Rules},
+				{name: "experiments", probe: caps.Experiments},
+				{name: "workspace_track", probe: caps.WorkspaceTrack},
+			},
+		},
+		{
+			title: "工程平面",
+			items: []struct {
+				name  string
+				probe rpc.MethodProbe
+			}{
+				{name: "diagnostics", probe: caps.Diagnostics},
+				{name: "validation", probe: caps.Validation},
+				{name: "edit_preview", probe: caps.EditPreview},
+				{name: "apply_edit", probe: caps.ApplyEdit},
+				{name: "commit_message", probe: caps.CommitMessage},
+				{name: "code_frequency", probe: caps.CodeFrequency},
+				{name: "rollback", probe: caps.Rollback},
+			},
+		},
+		{
+			title: "浏览器与轨迹",
+			items: []struct {
+				name  string
+				probe rpc.MethodProbe
+			}{
+				{name: "browser_list", probe: caps.BrowserList},
+				{name: "browser_open", probe: caps.BrowserOpen},
+				{name: "browser_focus", probe: caps.BrowserFocus},
+				{name: "browser_screenshot", probe: caps.BrowserScreenshot},
+				{name: "browser_click", probe: caps.BrowserClick},
+				{name: "browser_type", probe: caps.BrowserType},
+				{name: "browser_scroll", probe: caps.BrowserScroll},
+				{name: "trajectory_list", probe: caps.TrajectoryList},
+				{name: "trajectory_get", probe: caps.TrajectoryGet},
+				{name: "trajectory_export", probe: caps.TrajectoryExport},
+				{name: "memory_query", probe: caps.MemoryQuery},
+				{name: "memory_save", probe: caps.MemorySave},
+			},
+		},
+		{
+			title: "MCP 平面",
+			items: []struct {
+				name  string
+				probe rpc.MethodProbe
+			}{
+				{name: "mcp_states", probe: caps.McpStates},
+				{name: "mcp_servers", probe: caps.McpServers},
+				{name: "mcp_resources", probe: caps.McpResources},
+				{name: "mcp_setting", probe: caps.McpSetting},
+				{name: "mcp_enabled", probe: caps.McpEnabled},
+				{name: "mcp_add", probe: caps.McpControl.Add},
+				{name: "mcp_refresh", probe: caps.McpControl.Refresh},
+				{name: "mcp_restart", probe: caps.McpControl.Restart},
+				{name: "mcp_invoke", probe: caps.McpControl.Invoke},
+			},
+		},
+	}
+
+	fmt.Println("\n[CORE] 能力矩阵:")
+	for _, section := range sections {
+		fmt.Printf("  - %s\n", section.title)
+		for _, item := range section.items {
+			status := "UNSUPPORTED"
+			if item.probe.Supported {
+				status = "SUPPORTED"
+			}
+			fmt.Printf("    - %-18s %-11s %s\n", item.name, status, firstNonEmptyString(item.probe.Requested, item.probe.Evidence))
+		}
+	}
+}
+
+func printRecentCoreLogs(host *core.Host) {
+	if host == nil {
+		return
+	}
+	logs := host.Logs()
+	if len(logs) == 0 {
+		return
+	}
+
+	start := 0
+	if len(logs) > 20 {
+		start = len(logs) - 20
+	}
+	fmt.Println("最近内核日志:")
+	for _, line := range logs[start:] {
+		fmt.Printf("  %s\n", line)
+	}
 }

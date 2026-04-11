@@ -4,6 +4,7 @@ import { SkeletonCardList, SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
 
 interface TrajectoryModalProps {
+  detailSupported: boolean;
   detailError: string;
   detailLoading: boolean;
   isLoading: boolean;
@@ -14,9 +15,11 @@ interface TrajectoryModalProps {
   onResume: (id: string) => void;
   onRollback: (stepId: string) => void;
   onSelect: (id: string) => void;
+  resumeSupported: boolean;
   resumeError: string;
   resumeLoadingId: string;
   resumeSuccess: string;
+  rollbackSupported: boolean;
   rollbackError: string;
   rollbackStepId: string;
   rollbackSuccess: string;
@@ -30,6 +33,7 @@ function renderDetailValue(detail: JsonRecord, keys: string[], fallback = '-') {
 }
 
 export function TrajectoryModal({
+  detailSupported,
   detailError,
   detailLoading,
   isLoading,
@@ -40,9 +44,11 @@ export function TrajectoryModal({
   onResume,
   onRollback,
   onSelect,
+  resumeSupported,
   resumeError,
   resumeLoadingId,
   resumeSuccess,
+  rollbackSupported,
   rollbackError,
   rollbackStepId,
   rollbackSuccess,
@@ -72,9 +78,11 @@ export function TrajectoryModal({
         <div className="data-modal-shell">
           <section className="data-list-panel">
             <div className="data-list-toolbar">
-            <div>
+              <div>
                 <div className="data-section-title">{t('trajectory.list.title')}</div>
-                <div className="data-section-subtitle">{t('trajectory.list.subtitle')}</div>
+                <div className="data-section-subtitle">
+                  {detailSupported ? t('trajectory.list.subtitle') : t('trajectory.list.subtitle_read_only')}
+                </div>
               </div>
               <button type="button" className="btn-secondary" onClick={onRefresh} disabled={isLoading}>
                 {t('common.refresh')}
@@ -103,18 +111,25 @@ export function TrajectoryModal({
                       {item.title && <div className="data-list-item-summary">{item.title}</div>}
                       {item.updatedAt && <div className="data-list-item-meta">{item.updatedAt}</div>}
                     </button>
-                    <button
-                      type="button"
-                      className="btn-secondary trajectory-resume-button"
-                      onClick={() => onResume(item.id)}
-                      disabled={resumeLoadingId === item.id}
-                    >
-                      {resumeLoadingId === item.id ? t('trajectory.resuming') : t('trajectory.resume')}
-                    </button>
+                    {resumeSupported && (
+                      <button
+                        type="button"
+                        className="btn-secondary trajectory-resume-button"
+                        onClick={() => onResume(item.id)}
+                        disabled={resumeLoadingId === item.id}
+                      >
+                        {resumeLoadingId === item.id ? t('trajectory.resuming') : t('trajectory.resume')}
+                      </button>
+                    )}
                   </div>
                 ))}
               </AsyncContent>
             </div>
+            {!resumeSupported && (
+              <div className="data-list-toolbar">
+                <StateMessage message={t('trajectory.resume_unavailable')} />
+              </div>
+            )}
             {resumeError && <div className="data-list-toolbar"><StateMessage kind="error" message={resumeError} /></div>}
             {resumeSuccess && <div className="data-list-toolbar"><StateMessage kind="success" message={resumeSuccess} /></div>}
           </section>
@@ -129,11 +144,11 @@ export function TrajectoryModal({
 
             <div className="data-detail-body">
               <AsyncContent
-                emptyMessage={t('trajectory.detail.empty')}
+                emptyMessage={detailSupported ? t('trajectory.detail.empty') : t('trajectory.detail.unsupported')}
                 error={detailError}
-                hasContent={Boolean(selectedDetail)}
-                loading={detailLoading}
-                loadingMessage={t('trajectory.detail.loading')}
+                hasContent={!detailSupported || Boolean(selectedDetail)}
+                loading={detailSupported && detailLoading}
+                loadingMessage={detailSupported ? t('trajectory.detail.loading') : t('common.loading')}
                 skeleton={(
                   <>
                     <SkeletonRows lines={4} />
@@ -141,7 +156,10 @@ export function TrajectoryModal({
                   </>
                 )}
               >
-                {selectedDetail && (
+                {!detailSupported && (
+                  <div className="data-state">{t('trajectory.detail.unsupported')}</div>
+                )}
+                {detailSupported && selectedDetail && (
                   <>
                   <div className="data-detail-grid">
                     <div className="data-field">
@@ -183,19 +201,22 @@ export function TrajectoryModal({
                               <span className="badge info">{step.status}</span>
                             </div>
                             {step.updatedAt && <div className="trajectory-step-meta">{step.updatedAt}</div>}
-                            <button
-                              type="button"
-                              className="btn-secondary"
-                              onClick={() => onRollback(step.id)}
-                              disabled={rollbackStepId === step.id}
-                            >
-                              {rollbackStepId === step.id ? t('trajectory.rolling_back') : t('trajectory.rollback')}
-                            </button>
+                            {rollbackSupported && (
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => onRollback(step.id)}
+                                disabled={rollbackStepId === step.id}
+                              >
+                                {rollbackStepId === step.id ? t('trajectory.rolling_back') : t('trajectory.rollback')}
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
                     )}
 
+                    {!rollbackSupported && steps.length > 0 && <StateMessage message={t('trajectory.rollback_unavailable')} />}
                     <StateMessage kind="error" message={rollbackError} />
                     <StateMessage kind="success" message={rollbackSuccess} />
                   </div>

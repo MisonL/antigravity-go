@@ -34,6 +34,20 @@ const servicePath = "/exa.language_server_pb.LanguageServerService"
 
 // call makes a Connect RPC call.
 func (c *Client) call(method string, req, resp interface{}) error {
+	return c.callWithHTTPClient(method, req, resp, c.httpClient)
+}
+
+func (c *Client) callWithTimeout(method string, req, resp interface{}, timeout time.Duration) error {
+	httpClient := c.httpClient
+	if timeout > 0 {
+		cloned := *c.httpClient
+		cloned.Timeout = timeout
+		httpClient = &cloned
+	}
+	return c.callWithHTTPClient(method, req, resp, httpClient)
+}
+
+func (c *Client) callWithHTTPClient(method string, req, resp interface{}, httpClient *http.Client) error {
 	c.mu.RLock()
 	baseURL := c.baseURL
 	c.mu.RUnlock()
@@ -51,7 +65,7 @@ func (c *Client) call(method string, req, resp interface{}) error {
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	httpResp, err := c.httpClient.Do(httpReq)
+	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("%s: do request: %w", method, err)
 	}

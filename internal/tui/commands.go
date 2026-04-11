@@ -137,7 +137,7 @@ var registry = map[string]CommandDefinition{
 		Name:        "/status",
 		Description: tuiLocalizer().T("tui.command.status.description"),
 		Action: func(m *Model, args []string) tea.Cmd {
-			m.addMessage(m.t("tui.command.status.summary", m.host.IsReady()))
+			m.addMessage(m.statusMarkdown())
 			return nil
 		},
 	},
@@ -331,6 +331,9 @@ func init() {
 					sb.WriteString(fmt.Sprintf("- **%s**：%s\n", v.Name, v.Description))
 				}
 			}
+
+			sb.WriteString("\n")
+			sb.WriteString(m.t("tui.command.help.capability_note"))
 
 			m.addMessage(sb.String())
 			return nil

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AsyncContent, StateMessage } from './AsyncState';
 import { SkeletonCardList, SkeletonRows } from './Skeleton';
 import { useAppDomain } from '../domains/AppDomainContext';
+import type { CapabilityPolicy } from '../domains/coreCapabilities';
 
 interface McpToolInfo {
   name: string;
@@ -16,6 +17,13 @@ interface McpServerInfo {
   status?: string;
   tool_count: number;
   tools?: McpToolInfo[];
+}
+
+interface McpResourceInfo {
+  description?: string;
+  mime_type?: string;
+  name?: string;
+  uri: string;
 }
 
 interface MethodProbe {
@@ -37,7 +45,14 @@ interface McpResponse {
   warning?: string;
 }
 
+interface McpResourcesResponse {
+  next_page_token?: string;
+  resources?: McpResourceInfo[];
+  server?: string;
+}
+
 interface McpPanelProps {
+  access: CapabilityPolicy['mcp'];
   onClose: () => void;
 }
 
@@ -70,7 +85,7 @@ function formatEnvText(env?: Record<string, string>): string {
     .join('\n');
 }
 
-export function McpPanel({ onClose }: McpPanelProps) {
+export function McpPanel({ access, onClose }: McpPanelProps) {
   const { t } = useAppDomain();
   const [servers, setServers] = useState<McpServerInfo[]>([]);
   const [capabilities, setCapabilities] = useState<McpCapabilities>({});
@@ -78,6 +93,9 @@ export function McpPanel({ onClose }: McpPanelProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resourceError, setResourceError] = useState('');
+  const [resourceLoadingName, setResourceLoadingName] = useState('');
+  const [resourcesByServer, setResourcesByServer] = useState<Record<string, McpResourceInfo[]>>({});
   const [formName, setFormName] = useState('');
   const [formCommand, setFormCommand] = useState('');
   const [formArgs, setFormArgs] = useState('');
@@ -112,8 +130,38 @@ export function McpPanel({ onClose }: McpPanelProps) {
     void fetchServers();
   }, [fetchServers]);
 
+  async function fetchResources(serverName: string) {
+    if (!access.showResources) {
+      return;
+    }
+
+    setResourceLoadingName(serverName);
+    setResourceError('');
+
+    try {
+      const resp = await fetch(`/api/mcp/resources?server=${encodeURIComponent(serverName)}`);
+      if (!resp.ok) {
+        throw new Error((await resp.text()).trim() || formatStatusError(resp, 'mcp.error.resources_status'));
+      }
+
+      const data = await resp.json() as McpResourcesResponse;
+      setResourcesByServer((current) => ({
+        ...current,
+        [serverName]: data.resources ?? [],
+      }));
+    } catch (resourceFetchError) {
+      setResourceError(resourceFetchError instanceof Error ? resourceFetchError.message : t('mcp.error.resources'));
+    } finally {
+      setResourceLoadingName('');
+    }
+  }
+
   async function submitServer(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!access.allowManage) {
+      setError(t('mcp.form.read_only_notice'));
+      return;
+    }
     setSaving(true);
     setError('');
 
@@ -145,6 +193,10 @@ export function McpPanel({ onClose }: McpPanelProps) {
   }
 
   async function deleteServer(name: string) {
+    if (!access.allowManage) {
+      setError(t('mcp.form.read_only_notice'));
+      return;
+    }
     setSaving(true);
     setError('');
 
@@ -166,6 +218,10 @@ export function McpPanel({ onClose }: McpPanelProps) {
   }
 
   async function restartServer(name: string) {
+    if (!access.allowManage) {
+      setError(t('mcp.form.read_only_notice'));
+      return;
+    }
     setSaving(true);
     setError('');
 
@@ -197,6 +253,7 @@ export function McpPanel({ onClose }: McpPanelProps) {
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="glass-panel modal-content data-modal mcp-modal"
+        data-testid="mcp-modal"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -227,8 +284,9 @@ export function McpPanel({ onClose }: McpPanelProps) {
 
             <StateMessage message={warning} />
             <StateMessage kind="error" message={error} />
+            <StateMessage kind="error" message={resourceError} />
 
-            <div className="mcp-server-list">
+            <div className="mcp-server-list" data-testid="mcp-list">
               <AsyncContent
                 emptyMessage={t('mcp.empty')}
                 hasContent={servers.length > 0}
@@ -262,11 +320,42 @@ export function McpPanel({ onClose }: McpPanelProps) {
                       </div>
                     )}
 
-                    <div className="mcp-server-card__actions">
-                      <button type="button" className="btn-secondary" onClick={() => fillForm(server)}>{t('mcp.form.load')}</button>
-                      <button type="button" className="btn-secondary" onClick={() => restartServer(server.name)} disabled={saving}>{t('mcp.action.restart')}</button>
-                      <button type="button" className="btn-secondary btn-danger" onClick={() => deleteServer(server.name)} disabled={saving}>{t('mcp.action.delete')}</button>
-                    </div>
+                    {access.showResources && (
+                      <div className="data-json-block">
+                        <div className="data-section-title">{t('mcp.resources.title')}</div>
+                        <div className="mcp-server-card__actions">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => fetchResources(server.name)}
+                            disabled={saving || resourceLoadingName === server.name}
+                          >
+                            {resourceLoadingName === server.name ? t('mcp.resources.loading') : t('mcp.resources.load')}
+                          </button>
+                        </div>
+                        {resourcesByServer[server.name] && resourcesByServer[server.name].length === 0 && (
+                          <StateMessage message={t('mcp.resources.empty')} />
+                        )}
+                        {resourcesByServer[server.name] && resourcesByServer[server.name].length > 0 && (
+                          <div className="mcp-tool-list">
+                            {resourcesByServer[server.name].map((resource) => (
+                              <div key={`${server.name}-${resource.uri}`} className="data-json-block">
+                                <div className="data-section-title">{resource.name || resource.uri}</div>
+                                <pre className="data-json">{JSON.stringify(resource, null, 2)}</pre>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {access.allowManage && (
+                      <div className="mcp-server-card__actions">
+                        <button type="button" className="btn-secondary" onClick={() => fillForm(server)}>{t('mcp.form.load')}</button>
+                        <button type="button" className="btn-secondary" onClick={() => restartServer(server.name)} disabled={saving}>{t('mcp.action.restart')}</button>
+                        <button type="button" className="btn-secondary btn-danger" onClick={() => deleteServer(server.name)} disabled={saving}>{t('mcp.action.delete')}</button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </AsyncContent>
@@ -277,47 +366,66 @@ export function McpPanel({ onClose }: McpPanelProps) {
             <div className="data-detail-header">
               <div>
                 <div className="data-section-title">{t('mcp.form.title')}</div>
-                <div className="data-section-subtitle">{t('mcp.form.subtitle')}</div>
+                <div className="data-section-subtitle">
+                  {access.allowManage ? t('mcp.form.subtitle') : t('mcp.form.read_only_subtitle')}
+                </div>
               </div>
             </div>
 
-            <form className="mcp-form" onSubmit={submitServer} aria-busy={saving}>
-              {loading && servers.length === 0 && <SkeletonRows lines={4} />}
-              <label className="form-group">
-                <span>{t('mcp.form.name')}</span>
-                <input id="mcp-name" name="mcp-name" value={formName} onChange={(event) => setFormName(event.target.value)} placeholder={t('mcp.form.name.placeholder')} disabled={saving} />
-              </label>
+            {access.allowManage ? (
+              <form className="mcp-form" onSubmit={submitServer} aria-busy={saving}>
+                {loading && servers.length === 0 && <SkeletonRows lines={4} />}
+                <label className="form-group">
+                  <span>{t('mcp.form.name')}</span>
+                  <input id="mcp-name" name="mcp-name" value={formName} onChange={(event) => setFormName(event.target.value)} placeholder={t('mcp.form.name.placeholder')} disabled={saving} />
+                </label>
 
-              <label className="form-group">
-                <span>{t('mcp.form.command')}</span>
-                <input id="mcp-command" name="mcp-command" value={formCommand} onChange={(event) => setFormCommand(event.target.value)} placeholder={t('mcp.form.command.placeholder')} disabled={saving} />
-              </label>
+                <label className="form-group">
+                  <span>{t('mcp.form.command')}</span>
+                  <input id="mcp-command" name="mcp-command" value={formCommand} onChange={(event) => setFormCommand(event.target.value)} placeholder={t('mcp.form.command.placeholder')} disabled={saving} />
+                </label>
 
-              <label className="form-group">
-                <span>{t('mcp.form.args')}</span>
-                <input id="mcp-args" name="mcp-args" value={formArgs} onChange={(event) => setFormArgs(event.target.value)} placeholder={t('mcp.form.args.placeholder')} disabled={saving} />
-              </label>
+                <label className="form-group">
+                  <span>{t('mcp.form.args')}</span>
+                  <input id="mcp-args" name="mcp-args" value={formArgs} onChange={(event) => setFormArgs(event.target.value)} placeholder={t('mcp.form.args.placeholder')} disabled={saving} />
+                </label>
 
-              <label className="form-group">
-                <span>{t('mcp.form.env')}</span>
-                <textarea
-                  id="mcp-env"
-                  name="mcp-env"
-                  value={formEnv}
-                  onChange={(event) => setFormEnv(event.target.value)}
-                  placeholder={t('mcp.form.env.placeholder')}
-                  rows={8}
-                  disabled={saving}
-                />
-              </label>
+                <label className="form-group">
+                  <span>{t('mcp.form.env')}</span>
+                  <textarea
+                    id="mcp-env"
+                    name="mcp-env"
+                    value={formEnv}
+                    onChange={(event) => setFormEnv(event.target.value)}
+                    placeholder={t('mcp.form.env.placeholder')}
+                    rows={8}
+                    disabled={saving}
+                  />
+                </label>
 
-              <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>{t('common.close')}</button>
-                <button type="submit" className={`btn-primary${saving ? ' is-busy' : ''}`} disabled={saving} aria-busy={saving}>
-                  <span>{saving ? t('common.saving') : t('mcp.form.submit')}</span>
-                </button>
+                <div className="modal-footer">
+                  <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>{t('common.close')}</button>
+                  <button type="submit" className={`btn-primary${saving ? ' is-busy' : ''}`} disabled={saving} aria-busy={saving}>
+                    <span>{saving ? t('common.saving') : t('mcp.form.submit')}</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="data-detail-body" data-testid="mcp-read-only">
+                <StateMessage message={t('mcp.form.read_only_notice')} />
+                <div className="data-json-block">
+                  <div className="data-section-title">{t('mcp.form.read_only_title')}</div>
+                  <pre className="data-json">{JSON.stringify({
+                    read_only: access.readOnly,
+                    allow_manage: access.allowManage,
+                    allow_invoke: access.allowInvoke,
+                  }, null, 2)}</pre>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn-secondary" onClick={onClose}>{t('common.close')}</button>
+                </div>
               </div>
-            </form>
+            )}
           </section>
         </div>
       </div>

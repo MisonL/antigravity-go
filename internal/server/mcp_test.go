@@ -291,3 +291,55 @@ func TestHandleMCPDeleteRemovesServerFromOverrideConfig(t *testing.T) {
 		t.Fatalf("expected filesystem to be removed from override config: %s", rawConfig)
 	}
 }
+
+func TestHandleMCPResourcesReturnsNormalizedResources(t *testing.T) {
+	client, calls, cleanup := newRecordedRPCClient(t, map[string]func(map[string]interface{}) (int, interface{}){
+		"ListMcpResources": func(body map[string]interface{}) (int, interface{}) {
+			return http.StatusOK, map[string]interface{}{
+				"resources": []interface{}{
+					map[string]interface{}{
+						"uri":         "file:///tmp/project/README.md",
+						"name":        "README",
+						"description": "workspace readme",
+						"mime_type":   "text/markdown",
+					},
+				},
+				"next_page_token": "token-1",
+				"echo_server":     body["server_id"],
+			}
+		},
+	})
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp/resources?server=filesystem", nil)
+	resp := httptest.NewRecorder()
+
+	srv := &Server{mcp: corecap.NewMcpManager(client)}
+	srv.handleMCPResources(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	if len(*calls) == 0 || (*calls)[0].Method != "ListMcpResources" {
+		t.Fatalf("expected ListMcpResources call, got %+v", calls)
+	}
+	if (*calls)[0].Body["server_id"] != "filesystem" {
+		t.Fatalf("unexpected request body: %+v", (*calls)[0].Body)
+	}
+
+	var payload struct {
+		Server        string                    `json:"server"`
+		NextPageToken string                    `json:"next_page_token"`
+		Resources     []corecap.McpResourceInfo `json:"resources"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Server != "filesystem" || payload.NextPageToken != "token-1" {
+		t.Fatalf("unexpected payload header: %+v", payload)
+	}
+	if len(payload.Resources) != 1 || payload.Resources[0].URI != "file:///tmp/project/README.md" {
+		t.Fatalf("unexpected resources payload: %+v", payload.Resources)
+	}
+}

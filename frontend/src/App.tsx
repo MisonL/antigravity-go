@@ -85,6 +85,7 @@ function LayoutShell() {
   const dataPlaneAnchored = Boolean(app.currentFile?.trim());
   const statusLabel = chat.status && chat.connected ? t('app.status.online') : t('app.status.reconnecting');
   const fileStatusLabel = dataPlaneAnchored ? t('app.status.file_ready') : t('app.status.file_idle');
+  const { capabilityPolicy } = observability;
 
   useEffect(() => {
     if (!showDataPlane) {
@@ -152,16 +153,22 @@ function LayoutShell() {
           >
             {app.showTerminal ? t('app.action.hide_terminal_drawer') : t('app.action.show_terminal_drawer')}
           </button>
-          <button className="badge badge-btn" data-testid="open-trajectory" onClick={() => void observability.handleOpenTrajectoryModal()} type="button">
-            {t('app.action.trajectory')} {observability.observabilitySummary ? `(${observability.observabilitySummary.trajectories.count})` : ''}
-          </button>
+          {capabilityPolicy.trajectory.showList && (
+            <button className="badge badge-btn" data-testid="open-trajectory" onClick={() => void observability.handleOpenTrajectoryModal()} type="button">
+              {t('app.action.trajectory')} {observability.observabilitySummary ? `(${observability.observabilitySummary.trajectories.count})` : ''}
+            </button>
+          )}
           <button className="badge badge-btn" data-testid="open-execution" onClick={() => void observability.handleOpenExecutionModal()} type="button">
             {t('app.action.execution')} {observability.executionSummary ? `(${observability.executionSummary.total})` : ''}
           </button>
-          <button className="badge badge-btn" data-testid="open-memory" onClick={() => void observability.handleOpenMemoryModal()} type="button">
-            {t('app.action.memory')}
-          </button>
-          <button className="badge badge-btn" onClick={() => observability.setShowMcpPanel(true)} type="button">{t('app.action.mcp')}</button>
+          {capabilityPolicy.memory.showQuery && (
+            <button className="badge badge-btn" data-testid="open-memory" onClick={() => void observability.handleOpenMemoryModal()} type="button">
+              {t('app.action.memory')}
+            </button>
+          )}
+          {capabilityPolicy.mcp.show && (
+            <button className="badge badge-btn" data-testid="open-mcp" onClick={() => observability.setShowMcpPanel(true)} type="button">{t('app.action.mcp')}</button>
+          )}
           <button className="badge badge-btn" data-testid="open-visual-self-test" onClick={() => void observability.handleOpenVisualSelfTestModal()} type="button">{t('app.action.visual_self_test')}</button>
           <button className="badge badge-btn" onClick={() => setShowSettings(true)} type="button">{t('app.action.settings')}</button>
         </div>
@@ -179,19 +186,26 @@ function LayoutShell() {
               <button className="btn-primary command-button" onClick={() => setShowDataPlane(true)} type="button">
                 {t('app.action.open_data_plane')}
               </button>
-              <button className="btn-secondary command-button" onClick={() => void observability.handleOpenTrajectoryModal()} type="button">
-                {t('app.action.trajectory')}
-              </button>
+              {capabilityPolicy.trajectory.showList && (
+                <button className="btn-secondary command-button" onClick={() => void observability.handleOpenTrajectoryModal()} type="button">
+                  {t('app.action.trajectory')}
+                </button>
+              )}
             </div>
           </div>
 
           <div className="control-plane__workspace">
             <ChatWorkspace
               chat={chat}
+              codeFrequency={observability.codeFrequency}
+              codeFrequencyError={observability.codeFrequencyError}
+              codeFrequencyLoading={observability.codeFrequencyLoading}
               memoryCount={observability.observabilitySummary?.memories.count ?? null}
+              onLoadCodeFrequency={() => void observability.fetchCodeFrequency(true)}
               onOpenVisualSelfTest={() => void observability.handleOpenVisualSelfTestModal()}
               scoreboardError={observability.taskSummaryError}
               scoreboardSummary={observability.taskSummary}
+              showCodeFrequency={capabilityPolicy.observability.showCodeFrequency}
               visualSelfTestSample={observability.visualSelfTestSample}
             />
           </div>
@@ -286,6 +300,7 @@ function LayoutShell() {
       {observability.showTrajectoryModal && (
         <Suspense fallback={null}>
           <LazyTrajectoryModal
+            detailSupported={observability.capabilityPolicy.trajectory.showDetail}
             detailError={observability.trajectoryDetailError}
             detailLoading={observability.trajectoryDetailLoading}
             isLoading={observability.trajectoriesLoading}
@@ -296,9 +311,11 @@ function LayoutShell() {
             onResume={(id) => void observability.resumeTrajectorySession(id)}
             onRollback={(stepId) => void observability.rollbackToStep(stepId)}
             onSelect={(id) => void observability.fetchTrajectoryDetail(id, true)}
+            resumeSupported={observability.capabilityPolicy.trajectory.allowResume}
             resumeError={observability.resumeError}
             resumeLoadingId={observability.resumeLoadingId}
             resumeSuccess={observability.resumeSuccess}
+            rollbackSupported={observability.capabilityPolicy.trajectory.allowRollback}
             rollbackError={observability.rollbackError}
             rollbackStepId={observability.rollbackStepId}
             rollbackSuccess={observability.rollbackSuccess}
@@ -340,7 +357,7 @@ function LayoutShell() {
 
       {observability.showMcpPanel && (
         <Suspense fallback={null}>
-          <LazyMcpPanel onClose={() => observability.setShowMcpPanel(false)} />
+          <LazyMcpPanel access={observability.capabilityPolicy.mcp} onClose={() => observability.setShowMcpPanel(false)} />
         </Suspense>
       )}
 

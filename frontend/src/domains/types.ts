@@ -37,6 +37,21 @@ export interface ObservabilitySummary {
   trajectories: PlaneSnapshot;
 }
 
+export interface CodeFrequencyBucket {
+  num_commits: number;
+  lines_added: number;
+  lines_deleted: number;
+  record_start_time: string;
+  record_end_time: string;
+}
+
+export interface CodeFrequencyResponse {
+  code_frequency: CodeFrequencyBucket[];
+  generated_at: string;
+  repo_uri: string;
+  workspace_root: string;
+}
+
 export interface ExecutionSummaryItem {
   id: string;
   reference: string;
@@ -123,6 +138,40 @@ export interface VisualSelfTestSample {
   task: string;
   title: string;
   url: string;
+}
+
+export function normalizeCodeFrequencyResponse(value: unknown): CodeFrequencyResponse {
+  if (!isRecord(value)) {
+    return {
+      code_frequency: [],
+      generated_at: '',
+      repo_uri: '',
+      workspace_root: '',
+    };
+  }
+
+  const buckets = extractCollection(value, ['code_frequency', 'codeFrequency'])
+    .map((item) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      return {
+        num_commits: readNumber(item, ['num_commits', 'numCommits']) ?? 0,
+        lines_added: readNumber(item, ['lines_added', 'linesAdded']) ?? 0,
+        lines_deleted: readNumber(item, ['lines_deleted', 'linesDeleted']) ?? 0,
+        record_start_time: pickString(item, ['record_start_time', 'recordStartTime']),
+        record_end_time: pickString(item, ['record_end_time', 'recordEndTime']),
+      } satisfies CodeFrequencyBucket;
+    })
+    .filter((item): item is CodeFrequencyBucket => item !== null);
+
+  return {
+    code_frequency: buckets,
+    generated_at: pickString(value, ['generated_at', 'generatedAt']),
+    repo_uri: pickString(value, ['repo_uri', 'repoUri']),
+    workspace_root: pickString(value, ['workspace_root', 'workspaceRoot']),
+  };
 }
 
 export interface ResumeSessionResponse {

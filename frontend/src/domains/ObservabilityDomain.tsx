@@ -9,10 +9,18 @@ import {
 } from '../components/planeData';
 import { useAppDomain } from './AppDomainContext';
 import {
+  deriveCapabilityPolicy,
+  normalizeCoreCapabilitiesResponse,
+  type CapabilityPolicy,
+  type CoreCapabilitiesResponse,
+} from './coreCapabilities';
+import {
+  normalizeCodeFrequencyResponse,
   getErrorMessage,
   normalizeChatHistory,
   normalizeExecutionDetail,
   normalizeExecutionSummary,
+  type CodeFrequencyResponse,
   type ExecutionDetailResponse,
   type ExecutionSummaryResponse,
   type ObservabilityEvent,
@@ -23,6 +31,13 @@ import {
 import { useAsyncResource } from './useAsyncResource';
 
 export interface ObservabilityDomainState {
+  codeFrequency: CodeFrequencyResponse | null;
+  codeFrequencyError: string;
+  codeFrequencyLoading: boolean;
+  capabilityPolicy: CapabilityPolicy;
+  coreCapabilities: CoreCapabilitiesResponse | null;
+  coreCapabilitiesError: string;
+  coreCapabilitiesLoading: boolean;
   executionDetail: ExecutionDetailResponse | null;
   executionDetailError: string;
   executionDetailLoading: boolean;
@@ -70,6 +85,8 @@ export interface ObservabilityDomainState {
   resumeTrajectorySession: (trajectoryId: string, syncLocation?: boolean, showSuccess?: boolean) => Promise<void>;
   rollbackToStep: (stepId: string) => Promise<void>;
   fetchExecutionDetail: (id: string, force?: boolean) => Promise<void>;
+  fetchCoreCapabilities: (force?: boolean) => Promise<void>;
+  fetchCodeFrequency: (force?: boolean) => Promise<void>;
   setShowMemoryModal: (show: boolean) => void;
   setShowExecutionModal: (show: boolean) => void;
   setShowTrajectoryModal: (show: boolean) => void;
@@ -101,6 +118,18 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   const [resumeError, setResumeError] = useState('');
   const [resumeSuccess, setResumeSuccess] = useState('');
   const [latestObservabilityEvent, setLatestObservabilityEvent] = useState<ObservabilityEvent | null>(null);
+  const {
+    data: coreCapabilities,
+    error: coreCapabilitiesError,
+    loading: coreCapabilitiesLoading,
+    run: loadCoreCapabilities,
+  } = useAsyncResource<CoreCapabilitiesResponse | null>({ initialValue: null });
+  const {
+    data: codeFrequency,
+    error: codeFrequencyError,
+    loading: codeFrequencyLoading,
+    run: loadCodeFrequency,
+  } = useAsyncResource<CodeFrequencyResponse | null>({ initialValue: null });
   const {
     data: executionDetail,
     error: executionDetailError,
@@ -149,6 +178,26 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     () => normalizeTrajectorySteps(selectedTrajectoryDetail),
     [selectedTrajectoryDetail],
   );
+  const capabilityPolicy = useMemo(
+    () => deriveCapabilityPolicy(coreCapabilities),
+    [coreCapabilities],
+  );
+
+  const fetchCoreCapabilities = useCallback(async (force = false) => {
+    if (!force && coreCapabilities) {
+      return;
+    }
+
+    await loadCoreCapabilities(async () => {
+      const resp = await fetch('/api/core/capabilities');
+      if (!resp.ok) {
+        throw new Error(t('capabilities.error.request', resp.status));
+      }
+      return normalizeCoreCapabilitiesResponse(await resp.json());
+    }, {
+      onError: (error) => getErrorMessage(error, t('capabilities.error.load')),
+    });
+  }, [coreCapabilities, loadCoreCapabilities, t]);
 
   const fetchObservabilitySummary = useCallback(async () => {
     await loadObservabilitySummary(async () => {
@@ -161,6 +210,22 @@ export function useObservabilityDomain(): ObservabilityDomainState {
       onError: (error) => getErrorMessage(error, t('observability.error.summary_load')),
     });
   }, [loadObservabilitySummary, t]);
+
+  const fetchCodeFrequency = useCallback(async (force = false) => {
+    if (!force && codeFrequency) {
+      return;
+    }
+
+    await loadCodeFrequency(async () => {
+      const resp = await fetch('/api/observability/code-frequency');
+      if (!resp.ok) {
+        throw new Error(t('code_frequency.error.request', resp.status));
+      }
+      return normalizeCodeFrequencyResponse(await resp.json());
+    }, {
+      onError: (error) => getErrorMessage(error, t('code_frequency.error.load')),
+    });
+  }, [codeFrequency, loadCodeFrequency, t]);
 
   const fetchExecutionSummary = useCallback(async () => {
     await loadExecutionSummary(async () => {
@@ -214,6 +279,11 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     if (!id) {
       return;
     }
+    if (!capabilityPolicy.trajectory.showDetail) {
+      setSelectedTrajectoryId(id);
+      setSelectedTrajectoryDetail(null);
+      return;
+    }
     if (!force && id === selectedTrajectoryId && selectedTrajectoryDetail) {
       return;
     }
@@ -239,7 +309,14 @@ export function useObservabilityDomain(): ObservabilityDomainState {
         setRollbackSuccess('');
       },
     });
-  }, [loadTrajectoryDetail, selectedTrajectoryDetail, selectedTrajectoryId, setSelectedTrajectoryDetail, t]);
+  }, [
+    capabilityPolicy.trajectory.showDetail,
+    loadTrajectoryDetail,
+    selectedTrajectoryDetail,
+    selectedTrajectoryId,
+    setSelectedTrajectoryDetail,
+    t,
+  ]);
 
   const fetchTrajectories = useCallback(async (force = false) => {
     if (!force && trajectories.length > 0) {
@@ -267,6 +344,12 @@ export function useObservabilityDomain(): ObservabilityDomainState {
       return;
     }
 
+    if (!capabilityPolicy.trajectory.showDetail) {
+      setSelectedTrajectoryId(normalized[0].id);
+      setSelectedTrajectoryDetail(null);
+      return;
+    }
+
     const nextId = normalized.some((item) => item.id === selectedTrajectoryId)
       ? selectedTrajectoryId
       : normalized[0].id;
@@ -279,6 +362,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     setSelectedTrajectoryDetail,
     t,
     trajectories.length,
+    capabilityPolicy.trajectory.showDetail,
   ]);
 
   const fetchMemories = useCallback(async (force = false) => {
@@ -303,6 +387,12 @@ export function useObservabilityDomain(): ObservabilityDomainState {
 
   const rollbackToStep = useCallback(async (stepId: string) => {
     if (!stepId) {
+      return;
+    }
+    if (!capabilityPolicy.trajectory.allowRollback) {
+      const message = t('trajectory.error.rollback_unsupported');
+      setRollbackError(message);
+      showNotification(message, 'error');
       return;
     }
 
@@ -330,7 +420,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     } finally {
       setRollbackStepId('');
     }
-  }, [fetchTrajectories, showNotification, t]);
+  }, [capabilityPolicy.trajectory.allowRollback, fetchTrajectories, showNotification, t]);
 
   const resumeTrajectorySession = useCallback(async (
     trajectoryId: string,
@@ -338,6 +428,12 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     showSuccess = true,
   ) => {
     if (!trajectoryId) {
+      return;
+    }
+    if (!capabilityPolicy.trajectory.allowResume) {
+      const message = t('trajectory.error.resume_unsupported');
+      setResumeError(message);
+      showNotification(message, 'error');
       return;
     }
 
@@ -388,7 +484,7 @@ export function useObservabilityDomain(): ObservabilityDomainState {
     } finally {
       setResumeLoadingId('');
     }
-  }, [chatBridge, showNotification, t]);
+  }, [capabilityPolicy.trajectory.allowResume, chatBridge, showNotification, t]);
 
   const fetchVisualSelfTestSample = useCallback(async (force = false) => {
     if (!force && visualSelfTestSample) {
@@ -407,9 +503,12 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   }, [loadVisualSelfTestSample, t, visualSelfTestSample]);
 
   const handleOpenTrajectoryModal = useCallback(async () => {
+    if (!capabilityPolicy.trajectory.showList) {
+      return;
+    }
     setShowTrajectoryModal(true);
     await fetchTrajectories();
-  }, [fetchTrajectories]);
+  }, [capabilityPolicy.trajectory.showList, fetchTrajectories]);
 
   const handleOpenExecutionModal = useCallback(async () => {
     setShowExecutionModal(true);
@@ -442,9 +541,12 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   }, [fetchExecutionDetail, loadExecutionSummary, selectedExecutionId, t]);
 
   const handleOpenMemoryModal = useCallback(async () => {
+    if (!capabilityPolicy.memory.showQuery) {
+      return;
+    }
     setShowMemoryModal(true);
     await fetchMemories();
-  }, [fetchMemories]);
+  }, [capabilityPolicy.memory.showQuery, fetchMemories]);
 
   const handleOpenVisualSelfTestModal = useCallback(async () => {
     setShowVisualSelfTestModal(true);
@@ -466,9 +568,10 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   }, [setObservabilityBridge]);
 
   useEffect(() => {
+    fetchCoreCapabilities();
     fetchObservabilitySummary();
     fetchExecutionSummary();
-  }, [fetchExecutionSummary, fetchObservabilitySummary]);
+  }, [fetchCoreCapabilities, fetchExecutionSummary, fetchObservabilitySummary]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -518,12 +621,21 @@ export function useObservabilityDomain(): ObservabilityDomainState {
   ]);
 
   return {
+    codeFrequency,
+    codeFrequencyError,
+    codeFrequencyLoading,
+    capabilityPolicy,
+    coreCapabilities,
+    coreCapabilitiesError,
+    coreCapabilitiesLoading,
     executionDetail,
     executionDetailError,
     executionDetailLoading,
     executionSummaryLoading,
     fetchMemories,
     fetchExecutionDetail,
+    fetchCoreCapabilities,
+    fetchCodeFrequency,
     fetchTrajectories,
     fetchTrajectoryDetail,
     fetchVisualSelfTestSample,

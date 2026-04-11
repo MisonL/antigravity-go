@@ -84,6 +84,39 @@ func (s *Server) respondMCPState(w http.ResponseWriter, warning string) {
 	writeJSON(w, payload)
 }
 
+func (s *Server) handleMCPResources(w http.ResponseWriter, r *http.Request) {
+	if s.mcp == nil {
+		http.Error(w, "mcp manager is not initialized", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	serverName := strings.TrimSpace(r.URL.Query().Get("server"))
+	if serverName == "" {
+		http.Error(w, "server query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	resources, nextPageToken, err := s.mcp.ListResources(
+		serverName,
+		strings.TrimSpace(r.URL.Query().Get("page_token")),
+		strings.TrimSpace(r.URL.Query().Get("query")),
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"server":          serverName,
+		"resources":       resources,
+		"next_page_token": nextPageToken,
+	})
+}
+
 func (s *Server) refreshDynamicMcpTools() error {
 	if s.mcp == nil {
 		return nil

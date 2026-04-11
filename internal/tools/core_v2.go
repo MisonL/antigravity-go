@@ -15,6 +15,7 @@ type CoreV2Manager struct {
 	client     *rpc.Client
 	actuator   *corecap.ActuatorManager
 	browser    *corecap.BrowserManager
+	mcp        *corecap.McpManager
 	memory     *corecap.MemoryManager
 	trajectory *corecap.TrajectoryManager
 	versioning *corecap.VersioningManager
@@ -26,10 +27,58 @@ func NewCoreV2Manager(client *rpc.Client) *CoreV2Manager {
 		client:     client,
 		actuator:   corecap.NewActuatorManager(client),
 		browser:    corecap.NewBrowserManager(client),
+		mcp:        corecap.NewMcpManager(client),
 		memory:     corecap.NewMemoryManager(client),
 		trajectory: corecap.NewTrajectoryManager(client),
 		versioning: corecap.NewVersioningManager(client),
 		workspace:  corecap.NewWorkspaceManager(client),
+	}
+}
+
+// GetMcpResourcesTool returns a tool that lists MCP resources for a server.
+func (m *CoreV2Manager) GetMcpResourcesTool() Tool {
+	return Tool{
+		Definition: llm.ToolDefinition{
+			Name:        "get_core_mcp_resources",
+			Description: "List MCP resources exposed by a specific server managed by Antigravity Core.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"server": map[string]interface{}{
+						"type":        "string",
+						"description": "The MCP server name or identifier.",
+					},
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional filter text forwarded to the core resource listing RPC.",
+					},
+				},
+				"required": []string{"server"},
+			},
+		},
+		Execute: func(ctx context.Context, args json.RawMessage) (string, error) {
+			var params struct {
+				Server string `json:"server"`
+				Query  string `json:"query"`
+			}
+			if err := json.Unmarshal(args, &params); err != nil {
+				return "", err
+			}
+			if params.Server == "" {
+				return "", fmt.Errorf("server is required")
+			}
+
+			resources, nextPageToken, err := m.mcp.ListResources(params.Server, "", params.Query)
+			if err != nil {
+				return "", fmt.Errorf("failed to list mcp resources: %w", err)
+			}
+			data, _ := json.MarshalIndent(map[string]interface{}{
+				"server":          params.Server,
+				"resources":       resources,
+				"next_page_token": nextPageToken,
+			}, "", "  ")
+			return string(data), nil
+		},
 	}
 }
 
